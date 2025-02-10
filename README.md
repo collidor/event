@@ -1,4 +1,4 @@
-[![Codecov](https://codecov.io/gh/collidor/command/branch/main/graph/badge.svg)](https://codecov.io/gh/collidor/command)
+[![Codecov](https://codecov.io/gh/collidor/event/branch/main/graph/badge.svg)](https://codecov.io/gh/collidor/event)
 
 # Event
 

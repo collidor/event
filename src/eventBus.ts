@@ -2,22 +2,35 @@ import type { Event } from "./eventModel.ts";
 
 export type Type<T> = new (...args: any[]) => T;
 
-export type PublishingChannel = {
-  publish: (event: Event<any>) => void;
-  on: (event: string, callback: (data: any) => void) => void;
+export type PublishingChannel<
+  TContext extends Record<string, any> = Record<string, any>,
+> = {
+  publish: (event: Event<any>, context: TContext) => void;
+  on: (event: string, callback: (data: any, context: TContext) => void) => void;
 };
 
-export class EventBus {
-  private listeners: { [key: string]: Set<((arg: any) => void)> } = {};
-  private publishingChannel?: PublishingChannel;
+export class EventBus<
+  TContext extends Record<string, any> = Record<string, any>,
+> {
+  private listeners: {
+    [key: string]: Set<((arg: any, context: TContext) => void)>;
+  } = {};
+  private publishingChannel?: PublishingChannel<TContext>;
+  private context: TContext;
 
-  constructor(publishingChannel?: PublishingChannel) {
-    this.publishingChannel = publishingChannel;
+  constructor(
+    options?: {
+      context?: TContext;
+      publishingChannel?: PublishingChannel<TContext>;
+    },
+  ) {
+    this.publishingChannel = options?.publishingChannel;
+    this.context = options?.context || {} as TContext;
   }
 
   on<T>(
     event: Type<Event<T>>,
-    callback: (data: T) => void,
+    callback: (data: T, context: TContext) => void,
     abortSignal?: AbortSignal,
   ) {
     const name = event.name;
@@ -33,7 +46,10 @@ export class EventBus {
     }
   }
 
-  off<T>(event: Type<Event<T>>, callback: (data: T) => void) {
+  off<T>(
+    event: Type<Event<T>>,
+    callback: (data: T, context: TContext) => void,
+  ) {
     const name = event.name;
 
     if (!this.listeners[name]) {
@@ -45,7 +61,7 @@ export class EventBus {
   emit<T>(event: Event<T>) {
     const name = event.constructor.name;
     if (this.publishingChannel) {
-      this.publishingChannel.publish(event);
+      this.publishingChannel.publish(event, this.context);
     }
     return this.emitByName(name, event.data);
   }
@@ -54,6 +70,6 @@ export class EventBus {
     if (!this.listeners[name]) {
       return;
     }
-    this.listeners[name].forEach((listener) => listener(data));
+    this.listeners[name].forEach((listener) => listener(data, this.context));
   }
 }
