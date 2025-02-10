@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "license": "MIT",
     "exports": "./src/main.ts",
     "publish": {
@@ -35,8 +35,6 @@
             "ESNext",
             "deno.window"
         ],
-        "emitDecoratorMetadata": true,
-        "experimentalDecorators": true,
         "noUncheckedIndexedAccess": true,
         "strict": true
     },
