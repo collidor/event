@@ -1,5 +1,7 @@
 import type { Event } from "./eventModel.ts";
 
+export type Type<T> = new (...args: any[]) => T;
+
 export type PublishingChannel = {
   publish: (event: Event<any>) => void;
   on: (event: string, callback: (data: any) => void) => void;
@@ -14,11 +16,11 @@ export class EventBus {
   }
 
   on<T>(
-    event: Event<T>,
+    event: Type<Event<T>>,
     callback: (data: T) => void,
     abortSignal?: AbortSignal,
   ) {
-    const name = event.constructor.name;
+    const name = event.name;
     if (!this.listeners[name]) {
       this.listeners[name] = new Set();
     }
@@ -31,8 +33,8 @@ export class EventBus {
     }
   }
 
-  off<T>(event: Event<T>, callback: (data: T) => void) {
-    const name = event.constructor.name;
+  off<T>(event: Type<Event<T>>, callback: (data: T) => void) {
+    const name = event.name;
 
     if (!this.listeners[name]) {
       return;

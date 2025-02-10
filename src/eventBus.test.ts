@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
-import { EventBus, PublishingChannel } from "./eventBus.ts";
+import { assertSpyCalls, spy } from "@std/testing/mock";
+import { EventBus, type PublishingChannel } from "./eventBus.ts";
 import { Event } from "./eventModel.ts";
 
 // Test event classes
@@ -23,7 +24,7 @@ Deno.test("EventBus - should register and trigger event listeners", () => {
   bus.emit(new UserCreated("test-user"));
 
   assertSpyCalls(mockListener, 1);
-  assertEquals(mockListener.calls[0].args, ["test-user"]);
+  assertEquals(mockListener.calls[0]?.args, ["test-user"]);
 });
 
 Deno.test("EventBus - should remove listeners with off()", () => {
@@ -57,11 +58,11 @@ Deno.test("EventBus - should emit events by name", () => {
   bus.emitByName("UserCreated", "name-test");
 
   assertSpyCalls(mockListener, 1);
-  assertEquals(mockListener.calls[0].args, ["name-test"]);
+  assertEquals(mockListener.calls[0]?.args, ["name-test"]);
 });
 
 Deno.test("EventBus - should integrate with publishing channel", () => {
-  const mockChannel: PublishingChannel = {
+  const mockChannel = {
     publish: spy(),
     on: spy(),
   };
@@ -77,7 +78,7 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
   const event = new UserCreated("channel-test");
   bus.emit(event);
   assertSpyCalls(mockChannel.publish, 1);
-  assertEquals(mockChannel.publish.calls[0].args, [event]);
+  assertEquals(mockChannel.publish.calls[0]?.args, [event]);
 });
 
 Deno.test("EventBus - should handle multiple listeners", () => {
@@ -126,5 +127,5 @@ Deno.test("EventBus - should handle channel-less operation", () => {
   bus.emit(new UserCreated("no-channel"));
 
   assertSpyCalls(mockListener, 1);
-  assertEquals(mockListener.calls[0].args, ["no-channel"]);
+  assertEquals(mockListener.calls[0]?.args, ["no-channel"]);
 });
