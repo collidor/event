@@ -32,7 +32,7 @@ export class EventBus<
     event: Type<Event<T>>,
     callback: (data: T, context: TContext) => void,
     abortSignal?: AbortSignal,
-  ) {
+  ): void {
     const name = event.name;
     if (!this.listeners[name]) {
       this.listeners[name] = new Set();
@@ -49,7 +49,7 @@ export class EventBus<
   off<T>(
     event: Type<Event<T>>,
     callback: (data: T, context: TContext) => void,
-  ) {
+  ): void {
     const name = event.name;
 
     if (!this.listeners[name]) {
@@ -58,7 +58,7 @@ export class EventBus<
     this.listeners[name].delete(callback);
   }
 
-  emit<T>(event: Event<T>) {
+  emit<T>(event: Event<T>): void {
     const name = event.constructor.name;
     if (this.publishingChannel) {
       this.publishingChannel.publish(event, this.context);
@@ -66,7 +66,7 @@ export class EventBus<
     return this.emitByName(name, event.data);
   }
 
-  emitByName(name: string, data: any) {
+  emitByName(name: string, data: any): void {
     if (!this.listeners[name]) {
       return;
     }
