@@ -6,7 +6,10 @@ export type PublishingChannel<
   TContext extends Record<string, any> = Record<string, any>,
 > = {
   publish: (event: Event<any>, context: TContext) => void;
-  on: (event: string, callback: (data: any, context: TContext) => void) => void;
+  subscribe: (
+    event: string,
+    callback: (data: any, context: TContext) => void,
+  ) => void;
 };
 
 export class EventBus<
@@ -42,7 +45,7 @@ export class EventBus<
     });
     this.listeners[name].add(callback);
     if (this.publishingChannel) {
-      this.publishingChannel.on(name, callback);
+      this.publishingChannel.subscribe(name, callback);
     }
   }
 
