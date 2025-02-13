@@ -1,16 +1,7 @@
 import type { Event } from "./eventModel.ts";
+import type { PublishingChannel } from "./publishingEvents.type.ts";
 
 export type Type<T> = new (...args: any[]) => T;
-
-export type PublishingChannel<
-  TContext extends Record<string, any> = Record<string, any>,
-> = {
-  publish: (event: Event<any>, context: TContext) => void;
-  subscribe: (
-    event: string,
-    callback: (data: any, context: TContext) => void,
-  ) => void;
-};
 
 export class EventBus<
   TContext extends Record<string, any> = Record<string, any>,

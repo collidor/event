@@ -1,7 +1,8 @@
 import { assertEquals } from "jsr:@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
-import { EventBus, type PublishingChannel } from "./eventBus.ts";
+import { EventBus } from "./eventBus.ts";
 import { Event } from "./eventModel.ts";
+import type { PublishingChannel } from "./publishingEvents.type.ts";
 
 // Test event classes
 class UserCreated extends Event<string> {
@@ -64,7 +65,7 @@ Deno.test("EventBus - should emit events by name", () => {
 Deno.test("EventBus - should integrate with publishing channel", () => {
   const mockChannel = {
     publish: spy(),
-    on: spy(),
+    subscribe: spy(),
   };
 
   const bus = new EventBus({
@@ -76,7 +77,7 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
 
   // Test channel registration
   bus.on(UserCreated, mockListener);
-  assertSpyCalls(mockChannel.on, 1);
+  assertSpyCalls(mockChannel.subscribe, 1);
 
   // Test event publishing
   const event = new UserCreated("channel-test");
