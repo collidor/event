@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -9,14 +9,14 @@
     "type": "module",
     "exports": {
         ".": {
+            "types": "./dist/main.d.ts",
             "import": "./dist/main.js",
-            "require": "./dist/main.cjs",
-            "types": "./dist/main.d.ts"
+            "require": "./dist/main.cjs"
         },
         "./broadcastPublishingChannel": {
+            "types": "./dist/channels/broadcastPublishingChannel.d.ts",
             "import": "./dist/channels/broadcastPublishingChannel.js",
-            "require": "./dist/channels/broadcastPublishingChannel.cjs",
-            "types": "./dist/channels/broadcastPublishingChannel.d.ts"
+            "require": "./dist/channels/broadcastPublishingChannel.cjs"
         }
     },
     "scripts": {
