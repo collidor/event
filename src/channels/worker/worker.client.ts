@@ -5,26 +5,24 @@ import type {
   StartEvent,
   SubscribeEvent,
   UnsubscribeEvent,
-} from "../publishingEvents.type.ts";
+} from "../../publishingEvents.type.ts";
 
-function getBroadcastChannel(
-  name: string | BroadcastChannel,
-): BroadcastChannel {
-  if (typeof name === "string") {
-    return new BroadcastChannel(name);
-  }
-  return name;
+// Generic type for a port-like object (Worker and MessagePort both have these members)
+interface MessagePortLike {
+  postMessage(message: any): void;
+  addEventListener(
+    type: "message",
+    listener: (ev: MessageEvent) => void,
+  ): void;
 }
 
-export function createBroadcastPublishingChannel<
+// Create a publishing channel that uses a Worker (or a MessagePort) to communicate.
+export function createClientWorkerPublishingChannel<
   TContext extends Record<string, any>,
 >(
-  nameOrBroadcastChannel: string | BroadcastChannel,
+  port: Worker | MessagePortLike,
   context: TContext = {} as TContext,
-  source?: string,
 ): PublishingChannel<TContext> {
-  const broadcastChannel = getBroadcastChannel(nameOrBroadcastChannel);
-
   const listeners = new Map<
     string,
     ((data: any, context: Record<string, any>) => void)[]
@@ -39,40 +37,43 @@ export function createBroadcastPublishingChannel<
   } = {
     data(event) {
       if (listeners.has(event.name)) {
-        listeners.get(event.name)!.forEach((callback) => {
-          callback(JSON.parse(event.data), context);
-        });
+        listeners.get(event.name)!.forEach((cb) => cb(event.data, context));
       }
     },
     subscribe(event) {
-      subscribers.set(event.name, (subscribers.get(event.name) || 0) + 1);
+      subscribers.set(
+        event.name,
+        (subscribers.get(event.name) || 0) + 1,
+      );
     },
     unsubscribe(event) {
-      subscribers.set(event.name, (subscribers.get(event.name) || 0) - 1);
+      subscribers.set(
+        event.name,
+        (subscribers.get(event.name) || 0) - 1,
+      );
     },
     start() {
-      listeners.keys().forEach((name) => {
-        broadcastChannel.postMessage({
+      for (const name of listeners.keys()) {
+        port.postMessage({
           name,
           type: "subscribe",
-        });
-      });
+        } as SubscribeEvent);
+      }
     },
   };
 
-  broadcastChannel.addEventListener(
-    "message",
-    (event: PublishingEvent) => {
-      if (source && event.data.source === source) {
-        return;
-      }
-      handleEvent[event.data.type](event.data as any);
-    },
-  );
+  port.addEventListener("message", (ev: PublishingEvent | ErrorEvent) => {
+    if (ev instanceof ErrorEvent) {
+      console.error("Error in worker publishing channel:", ev.error);
+      return;
+    }
+    // Ignore messages originating from the same source.
+    handleEvent[ev.data.type](ev.data as any);
+  });
 
-  broadcastChannel.postMessage({
+  // Tell the worker we are ready.
+  port.postMessage({
     type: "start",
-    source,
   } as StartEvent);
 
   return {
@@ -80,47 +81,36 @@ export function createBroadcastPublishingChannel<
       if (!listeners.has(name)) {
         listeners.set(name, []);
       }
-
-      broadcastChannel.postMessage({
+      port.postMessage({
         name,
         type: "subscribe",
-        source,
       } as SubscribeEvent);
-
       listeners.get(name)!.push(callback as any);
     },
     unsubscribe(name, callback): void {
-      broadcastChannel.postMessage({
+      port.postMessage({
         type: "unsubscribe",
         name,
-        source,
       } as UnsubscribeEvent);
-
-      if (!listeners.has(name)) {
-        return;
-      }
-
+      if (!listeners.has(name)) return;
       listeners.set(
         name,
         listeners.get(name)!.filter((cb) => cb !== callback),
       );
-
       if (listeners.get(name)!.length === 0) {
         listeners.delete(name);
-        broadcastChannel.postMessage({
+        port.postMessage({
           name,
           type: "unsubscribe",
-          source,
         } as UnsubscribeEvent);
       }
     },
     publish(event): void {
       if ((subscribers.get(event.constructor.name) || 0) > 0) {
-        broadcastChannel.postMessage({
+        port.postMessage({
           name: event.constructor.name,
           data: JSON.stringify(event.data),
           type: "data",
-          source,
         } as DataEvent);
       }
     },

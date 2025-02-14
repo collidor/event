@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "1.2.2",
+    "version": "2.0.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -13,15 +13,25 @@
             "import": "./dist/main.js",
             "require": "./dist/main.cjs"
         },
-        "./broadcastPublishingChannel": {
-            "types": "./dist/channels/broadcastPublishingChannel.d.ts",
-            "import": "./dist/channels/broadcastPublishingChannel.js",
-            "require": "./dist/channels/broadcastPublishingChannel.cjs"
+        "./broadcastChannel": {
+            "types": "./dist/channels/broadcast/broadcastPublishingChannel.d.ts",
+            "import": "./dist/channels/broadcast/broadcastPublishingChannel.js",
+            "require": "./dist/channels/broadcast/broadcastPublishingChannel.cjs"
+        },
+        "./worker/client": {
+            "types": "./dist/channels/worker/worker.client.d.ts",
+            "import": "./dist/channels/worker/worker.client.js",
+            "require": "./dist/channels/worker/worker.client.cjs"
+        },
+        "./worker/server": {
+            "types": "./dist/channels/worker/worker.server.d.ts",
+            "import": "./dist/channels/worker/worker.server.js",
+            "require": "./dist/channels/worker/worker.server.cjs"
         }
     },
     "scripts": {
         "test": "deno test",
-        "build": "tsup src/main.ts src/channels/broadcastPublishingChannel.ts --sourcemap --dts --format esm,cjs"
+        "build": "tsup"
     },
     "keywords": [
         "event",

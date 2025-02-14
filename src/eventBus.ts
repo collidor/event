@@ -22,9 +22,9 @@ export class EventBus<
     this.context = options?.context || {} as TContext;
   }
 
-  on<T>(
-    event: Type<Event<T>>,
-    callback: (data: T, context: TContext) => void,
+  on<T extends Event, R extends T extends Event<infer M> ? M : unknown>(
+    event: Type<T>,
+    callback: (data: R, context: TContext) => void,
     abortSignal?: AbortSignal,
   ): void {
     const name = event.name;
@@ -40,9 +40,9 @@ export class EventBus<
     }
   }
 
-  off<T>(
-    event: Type<Event<T>>,
-    callback: (data: T, context: TContext) => void,
+  off<T extends Event, R extends T extends Event<infer M> ? M : unknown>(
+    event: Type<T>,
+    callback: (data: R, context: TContext) => void,
   ): void {
     const name = event.name;
 
@@ -52,7 +52,7 @@ export class EventBus<
     this.listeners[name].delete(callback);
   }
 
-  emit<T>(event: Event<T>): void {
+  emit<T extends Event>(event: T): void {
     const name = event.constructor.name;
     if (this.publishingChannel) {
       this.publishingChannel.publish(event, this.context);
