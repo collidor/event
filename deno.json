@@ -1,12 +1,13 @@
 {
     "name": "@collidor/event",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "license": "MIT",
     "exports": {
         ".": "./src/main.ts",
         "./broadcastPublishingChannel": "./src/channels/broadcast/broadcastPublishingChannel.ts",
         "./worker/client": "./src/channels/worker/worker.client.ts",
-        "./worker/server": "./src/channels/worker/worker.server.ts"
+        "./worker/server": "./src/channels/worker/worker.server.ts",
+        "./worker/shared/server": "./src/channels/worker/sharedWorker.server.ts"
     },
     "publish": {
         "include": [
@@ -40,7 +41,8 @@
             "ESNext",
             "deno.window",
             "deno.worker",
-            "deno.unstable"
+            "deno.unstable",
+            "deno.webworker"
         ],
         "noUncheckedIndexedAccess": true,
         "strict": true

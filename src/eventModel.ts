@@ -1,7 +1,7 @@
 export abstract class Event<T = unknown> {
-  public data?: T;
+  public data: T;
 
   constructor(data?: T) {
-    this.data = data;
+    this.data = data as T;
   }
 }

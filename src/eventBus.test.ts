@@ -5,17 +5,9 @@ import { Event } from "./eventModel.ts";
 import type { PublishingChannel } from "./publishingEvents.type.ts";
 
 // Test event classes
-class UserCreated extends Event<string> {
-  constructor(data: string) {
-    super(data);
-  }
-}
+class UserCreated extends Event<string> {}
 
-class OrderPlaced extends Event {
-  constructor(data: number) {
-    super(data);
-  }
-}
+class OrderPlaced extends Event<number> {}
 
 Deno.test("EventBus - should register and trigger event listeners", () => {
   const bus = new EventBus();

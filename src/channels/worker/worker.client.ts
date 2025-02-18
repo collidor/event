@@ -36,6 +36,7 @@ export function createClientWorkerPublishingChannel<
     ) => void;
   } = {
     data(event) {
+      console.log("Received data event", event);
       if (listeners.has(event.name)) {
         listeners.get(event.name)!.forEach((cb) => cb(event.data, context));
       }
@@ -53,6 +54,7 @@ export function createClientWorkerPublishingChannel<
       );
     },
     start() {
+      console.log("Worker publishing channel started");
       for (const name of listeners.keys()) {
         port.postMessage({
           name,
@@ -68,6 +70,7 @@ export function createClientWorkerPublishingChannel<
       return;
     }
     // Ignore messages originating from the same source.
+    console.log("Received message", ev);
     handleEvent[ev.data.type](ev.data as any);
   });
 
@@ -106,6 +109,8 @@ export function createClientWorkerPublishingChannel<
       }
     },
     publish(event): void {
+      console.log("Publishing event", event);
+      console.log("Subscribers", subscribers);
       if ((subscribers.get(event.constructor.name) || 0) > 0) {
         port.postMessage({
           name: event.constructor.name,

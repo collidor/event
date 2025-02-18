@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -27,6 +27,11 @@
             "types": "./dist/channels/worker/worker.server.d.ts",
             "import": "./dist/channels/worker/worker.server.js",
             "require": "./dist/channels/worker/worker.server.cjs"
+        },
+        "./worker/shared/server": {
+            "types": "./dist/channels/worker/sharedWorker.server.d.ts",
+            "import": "./dist/channels/worker/sharedWorker.server.js",
+            "require": "./dist/channels/worker/sharedWorker.server.cjs"
         }
     },
     "scripts": {
