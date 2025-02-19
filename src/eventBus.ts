@@ -22,7 +22,7 @@ export class EventBus<
     this.context = options?.context || {} as TContext;
   }
 
-  on<T extends Event, R extends T extends Event<infer M> ? M : unknown>(
+  on<T extends Event<any>, R extends T extends Event<infer M> ? M : unknown>(
     event: Type<T>,
     callback: (data: R, context: TContext) => void,
     abortSignal?: AbortSignal,
@@ -40,7 +40,7 @@ export class EventBus<
     }
   }
 
-  off<T extends Event, R extends T extends Event<infer M> ? M : unknown>(
+  off<T extends Event<any>, R extends T extends Event<infer M> ? M : unknown>(
     event: Type<T>,
     callback: (data: R, context: TContext) => void,
   ): void {
@@ -52,18 +52,20 @@ export class EventBus<
     this.listeners[name].delete(callback);
   }
 
-  emit<T extends Event>(event: T): void {
+  emit<T extends Event<any>>(event: T, context?: TContext): void {
     const name = event.constructor.name;
     if (this.publishingChannel) {
-      this.publishingChannel.publish(event, this.context);
+      this.publishingChannel.publish(event, context ?? this.context);
     }
-    return this.emitByName(name, event.data);
+    return this.emitByName(name, event.data, context);
   }
 
-  emitByName(name: string, data: any): void {
+  emitByName(name: string, data: any, context?: TContext): void {
     if (!this.listeners[name]) {
       return;
     }
-    this.listeners[name].forEach((listener) => listener(data, this.context));
+    this.listeners[name].forEach((listener) =>
+      listener(data, context ?? this.context)
+    );
   }
 }

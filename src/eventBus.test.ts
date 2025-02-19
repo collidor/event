@@ -9,6 +9,8 @@ class UserCreated extends Event<string> {}
 
 class OrderPlaced extends Event<number> {}
 
+class VoidEvent extends Event {}
+
 Deno.test("EventBus - should register and trigger event listeners", () => {
   const bus = new EventBus();
   const mockListener = spy();
@@ -139,4 +141,29 @@ Deno.test("EventBus - should handle context", () => {
 
   assertSpyCalls(mockListener, 1);
   assertEquals(mockListener.calls[0]?.args, ["context-test", context]);
+});
+
+Deno.test("EventBus - should handle void events", () => {
+  const bus = new EventBus();
+  const mockListener = spy();
+
+  bus.on(VoidEvent, mockListener);
+  bus.emit(new VoidEvent());
+
+  assertSpyCalls(mockListener, 1);
+  assertEquals(mockListener.calls[0]?.args, [undefined, {}]);
+});
+
+Deno.test("EventBus - should emit with custom context", () => {
+  const bus = new EventBus();
+  const mockListener = spy();
+  const context = {
+    user: "test-user",
+  };
+
+  bus.on(UserCreated, mockListener);
+  bus.emit(new UserCreated("custom-context"), context);
+
+  assertSpyCalls(mockListener, 1);
+  assertEquals(mockListener.calls[0]?.args, ["custom-context", context]);
 });
