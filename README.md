@@ -24,23 +24,23 @@ A small library to create, register, and listen to events. This library provides
 
 Import directly using a jsr specifier:
 
-:::ts
+```ts
 import { EventBus, Event } from "jsr:@collidor/event";
-:::
+```
 
 ### Node.js / npm
 
 Install via npm:
 
-:::bash
+```bash
 npm install @collidor/event
-:::
+```
 
 Then import it:
 
-:::ts
+```ts
 import { EventBus, Event } from "@collidor/event";
-:::
+```
 
 ## Usage
 
@@ -48,11 +48,11 @@ import { EventBus, Event } from "@collidor/event";
 
 Extend the `Event` class from `eventModel.ts`:
 
-:::ts
+```ts
 import { Event } from "@collidor/event";
 
 export class MyEvent extends Event<{ message: string }> {}
-:::
+```
 
 ### Setting Up the Event Bus with a Publishing Channel
 
@@ -60,7 +60,7 @@ Create an instance of the `EventBus` and subscribe to your custom event. You can
 
 #### Using the BroadcastChannel Publishing Channel
 
-:::ts
+```ts
 import { EventBus, MyEvent } from "@collidor/event";
 import { createBroadcastPublishingChannel } from "@collidor/event/broadcastChannel";
 
@@ -74,7 +74,7 @@ export const eventBus = new EventBus({
 eventBus.on(MyEvent, (data, context) => {
   console.log("Received event:", data.message);
 });
-:::
+```
 
 #### Using the Worker Publishing Channel
 
@@ -82,18 +82,18 @@ eventBus.on(MyEvent, (data, context) => {
 
 Inside your dedicated worker script:
 
-:::ts
+```ts
 import { createWorkerPublishingChannel } from "@collidor/event/worker/server";
 
 const serverChannel = createWorkerPublishingChannel({ server: true });
 // Use serverChannel.subscribe(), publish(), etc. within the worker.
-:::
+```
 
 **Client Side (Main Thread):**
 
 On the client side, create a worker and set up the client channel:
 
-:::ts
+```ts
 import { EventBus } from "@collidor/event";
 import { createClientWorkerPublishingChannel } from "@collidor/event/worker/client";
 
@@ -101,7 +101,7 @@ const worker = new Worker(new URL("./worker.ts", import.meta.url).href, { type: 
 export const eventBus = new EventBus({
   publishingChannel: createClientWorkerPublishingChannel(worker),
 });
-:::
+```
 
 #### Using the SharedWorker Publishing Channel
 
@@ -109,18 +109,18 @@ export const eventBus = new EventBus({
 
 Inside your shared worker script:
 
-:::ts
+```ts
 import { createSharedWorkerPublishingChannel } from "@collidor/event/worker/shared/server";
 
 const serverChannel = createSharedWorkerPublishingChannel(self, { server: true });
 // The channel automatically listens for new connections.
-:::
+```
 
 **Client Side (Main Thread):**
 
 On the client side, create a SharedWorker and configure the client channel:
 
-:::ts
+```ts
 import { EventBus } from "@collidor/event";
 import { createClientWorkerPublishingChannel } from "@collidor/event/worker/client";
 
@@ -128,15 +128,15 @@ const sharedWorker = new SharedWorker(new URL("./sharedWorker.ts", import.meta.u
 export const eventBus = new EventBus({
   publishingChannel: createClientWorkerPublishingChannel(sharedWorker.port),
 });
-:::
+```
 
 ### Emitting Events
 
 Emit events using the `emit` method:
 
-:::ts
+```ts
 eventBus.emit(new MyEvent("Hello, world!"));
-:::
+```
 
 ## Examples
 
@@ -148,7 +148,7 @@ Check the examples [folder](https://github.com/collidor/event/tree/main/examples
 
 The base event model, defined in `eventModel.ts`:
 
-:::ts
+```ts
 export abstract class Event<T = unknown> {
   public data: T;
 
@@ -156,13 +156,13 @@ export abstract class Event<T = unknown> {
     this.data = data;
   }
 }
-:::
+```
 
 ### Event Bus
 
 The `EventBus` class, defined in `eventBus.ts`, provides the main API:
 
-:::ts
+```ts
 export class EventBus<TContext extends Record<string, any> = Record<string, any>> {
   on<T>(
     event: new (...args: any[]) => Event<T>,
@@ -177,7 +177,7 @@ export class EventBus<TContext extends Record<string, any> = Record<string, any>
 
   emit<T>(event: Event<T>): void;
 }
-:::
+```
 
 ### Publishing Channels
 
@@ -185,13 +185,13 @@ export class EventBus<TContext extends Record<string, any> = Record<string, any>
 
 Defined via the `PublishingChannel` interface in [publishingEvents.type.ts](./publishingEvents.type.ts) and implemented by:
 
-:::ts
+```ts
 export function createBroadcastPublishingChannel<TContext extends Record<string, any>>(
   nameOrBroadcastChannel: string | BroadcastChannel,
   context: TContext,
   source?: string,
 ): PublishingChannel<TContext>;
-:::
+```
 
 This channel uses the browser’s native BroadcastChannel API to send and receive messages.
 
@@ -199,25 +199,25 @@ This channel uses the browser’s native BroadcastChannel API to send and receiv
 
 For dedicated workers, see:
 
-:::ts
+```ts
 export function createWorkerPublishingChannel<TContext extends Record<string, any>>(
   port: Worker | MessagePortLike,
   context: TContext,
   options?: { onConnect?: (port: MessagePort) => void }
 ): PublishingChannel<TContext>;
-:::
+```
 
 #### SharedWorker Publishing Channel
 
 For SharedWorker scenarios (which support dynamic client connections), see:
 
-:::ts
+```ts
 export function createSharedWorkerPublishingChannel<TContext extends Record<string, any>>(
   sharedWorker: SharedWorkerLike,
   context: TContext,
   options?: { onConnect?: (port: MessagePort) => void } & EventHandlerOptions
 ): PublishingChannel<TContext>;
-:::
+```
 
 ## Package Structure
 
