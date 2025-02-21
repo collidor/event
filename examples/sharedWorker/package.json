@@ -15,9 +15,9 @@
         "format": "prettier --write src/"
     },
     "dependencies": {
+        "@collidor/event": "^2.2.0",
         "vue": "^3.5.13",
-        "vue-router": "^4.5.0",
-        "@collidor/event": "2.0.0"
+        "vue-router": "^4.5.0"
     },
     "devDependencies": {
         "@tsconfig/node22": "^22.0.0",
