@@ -1,20 +1,15 @@
 import type {
   DataEvent,
+  MessagePortLike,
   PublishingChannel,
   PublishingEvent,
   StartEvent,
   SubscribeEvent,
   UnsubscribeEvent,
 } from "../../publishingEvents.type.ts";
+import { EventHandler } from "../eventHandler.ts";
 
 // Generic type for a port-like object (Worker and MessagePort both have these members)
-interface MessagePortLike {
-  postMessage(message: any): void;
-  addEventListener(
-    type: "message",
-    listener: (ev: MessageEvent) => void,
-  ): void;
-}
 
 // Create a publishing channel that uses a Worker (or a MessagePort) to communicate.
 export function createClientWorkerPublishingChannel<
@@ -22,86 +17,53 @@ export function createClientWorkerPublishingChannel<
 >(
   port: Worker | MessagePortLike,
   context: TContext = {} as TContext,
+  options?: {
+    onConnect?: (port: MessagePort) => void;
+  },
 ): PublishingChannel<TContext> {
-  const listeners = new Map<
-    string,
-    ((data: any, context: Record<string, any>) => void)[]
-  >();
+  const eventHandler = new EventHandler(context);
+  eventHandler.ports.add(port);
 
-  const subscribers = new Map<string, number>();
-
-  const handleEvent: {
-    [K in Pick<PublishingEvent["data"], "type">["type"]]: (
-      arg: (DataEvent | SubscribeEvent | UnsubscribeEvent) & { type: K },
-    ) => void;
-  } = {
-    data(event) {
-      console.log("Received data event", event);
-      if (listeners.has(event.name)) {
-        listeners.get(event.name)!.forEach((cb) => cb(event.data, context));
-      }
-    },
-    subscribe(event) {
-      subscribers.set(
-        event.name,
-        (subscribers.get(event.name) || 0) + 1,
-      );
-    },
-    unsubscribe(event) {
-      subscribers.set(
-        event.name,
-        (subscribers.get(event.name) || 0) - 1,
-      );
-    },
-    start() {
-      console.log("Worker publishing channel started");
-      for (const name of listeners.keys()) {
-        port.postMessage({
-          name,
-          type: "subscribe",
-        } as SubscribeEvent);
-      }
-    },
+  port.onmessage = (ev: PublishingEvent) => {
+    eventHandler[ev.data.type](ev.data as any, port);
   };
 
-  port.addEventListener("message", (ev: PublishingEvent | ErrorEvent) => {
-    if (ev instanceof ErrorEvent) {
-      console.error("Error in worker publishing channel:", ev.error);
-      return;
-    }
-    // Ignore messages originating from the same source.
-    console.log("Received message", ev);
-    handleEvent[ev.data.type](ev.data as any);
-  });
+  port.onmessageerror = (ev: MessageEvent) => {
+    console.error("Error in worker publishing channel:", ev);
+  };
 
   // Tell the worker we are ready.
   port.postMessage({
     type: "start",
   } as StartEvent);
 
+  if (options?.onConnect) {
+    options.onConnect(port as MessagePort);
+  }
+
   return {
     subscribe(name, callback): void {
-      if (!listeners.has(name)) {
-        listeners.set(name, []);
+      if (!eventHandler.listeners.has(name)) {
+        eventHandler.listeners.set(name, []);
       }
       port.postMessage({
         name,
         type: "subscribe",
       } as SubscribeEvent);
-      listeners.get(name)!.push(callback as any);
+      eventHandler.listeners.get(name)!.push(callback as any);
     },
     unsubscribe(name, callback): void {
       port.postMessage({
         type: "unsubscribe",
         name,
       } as UnsubscribeEvent);
-      if (!listeners.has(name)) return;
-      listeners.set(
+      if (!eventHandler.listeners.has(name)) return;
+      eventHandler.listeners.set(
         name,
-        listeners.get(name)!.filter((cb) => cb !== callback),
+        eventHandler.listeners.get(name)!.filter((cb) => cb !== callback),
       );
-      if (listeners.get(name)!.length === 0) {
-        listeners.delete(name);
+      if (eventHandler.listeners.get(name)!.length === 0) {
+        eventHandler.listeners.delete(name);
         port.postMessage({
           name,
           type: "unsubscribe",
@@ -109,9 +71,10 @@ export function createClientWorkerPublishingChannel<
       }
     },
     publish(event): void {
-      console.log("Publishing event", event);
-      console.log("Subscribers", subscribers);
-      if ((subscribers.get(event.constructor.name) || 0) > 0) {
+      if (
+        (eventHandler.portSubscriptions.get(event.constructor.name)?.size ||
+          0) > 0
+      ) {
         port.postMessage({
           name: event.constructor.name,
           data: JSON.stringify(event.data),

@@ -1,15 +1,8 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import {} from "jsr:@std/testing/mock";
-import { createBroadcastPublishingChannel } from "./broadcastPublishingChannel.ts"; // adjust the import path
+import { createBroadcastPublishingChannel } from "./broadcastPublishingChannel.ts";
 import { MockBroadcastChannel } from "./broadcastChannel.mock.ts";
 
-// Save the original BroadcastChannel.
-const _OriginalBroadcastChannel = globalThis.BroadcastChannel;
-
-// Override the global BroadcastChannel with the mock.
-globalThis.BroadcastChannel = MockBroadcastChannel as any;
-
-// Define the UnsubscribeEvent type for testing purposes.
+// Define a minimal UnsubscribeEvent type for testing purposes.
 type UnsubscribeEvent = {
   type: "unsubscribe";
   name: string;
@@ -19,17 +12,21 @@ type UnsubscribeEvent = {
 Deno.test("BroadcastPublishingChannel - publishing event is received by subscribed channel", async () => {
   // Create a unique channel name for isolation.
   const channelName = "test-channel-" + crypto.randomUUID();
-  const bc1 = new BroadcastChannel(channelName);
-  const bc2 = new BroadcastChannel(channelName);
+  const bc1 = new MockBroadcastChannel(channelName);
+  const bc2 = new MockBroadcastChannel(channelName);
 
   // Create two publishing channel instances sharing the same BroadcastChannel.
   // They will have different internal 'source' values.
-  const subscriber = createBroadcastPublishingChannel(bc1, {
-    testContext: "sub",
-  }, "sub");
-  const publisher = createBroadcastPublishingChannel(bc2, {
-    testContext: "pub",
-  }, "pub");
+  const subscriber = createBroadcastPublishingChannel(
+    bc1 as BroadcastChannel,
+    { testContext: "sub" },
+    "sub",
+  );
+  const publisher = createBroadcastPublishingChannel(
+    bc2 as BroadcastChannel,
+    { testContext: "pub" },
+    "pub",
+  );
 
   let callbackCalled = false;
   let callbackData: any = null;
@@ -71,9 +68,9 @@ Deno.test("BroadcastPublishingChannel - publishing event is received by subscrib
 Deno.test("BroadcastPublishingChannel - multiple subscribers receive published event", async () => {
   // Create a unique channel name for isolation.
   const channelName = "test-channel-" + crypto.randomUUID();
-  const bc1 = new BroadcastChannel(channelName);
-  const bc2 = new BroadcastChannel(channelName);
-  const bc3 = new BroadcastChannel(channelName);
+  const bc1 = new MockBroadcastChannel(channelName) as BroadcastChannel;
+  const bc2 = new MockBroadcastChannel(channelName) as BroadcastChannel;
+  const bc3 = new MockBroadcastChannel(channelName) as BroadcastChannel;
 
   // Create two subscriber instances and one publisher, each with its own source.
   const subscriber1 = createBroadcastPublishingChannel(
@@ -139,8 +136,8 @@ Deno.test("BroadcastPublishingChannel - multiple subscribers receive published e
 Deno.test("BroadcastPublishingChannel - unsubscribed channel does not receive published event", async () => {
   // Create a unique channel name for isolation.
   const channelName = "test-channel-" + crypto.randomUUID();
-  const bc1 = new BroadcastChannel(channelName);
-  const bc2 = new BroadcastChannel(channelName);
+  const bc1 = new MockBroadcastChannel(channelName) as BroadcastChannel;
+  const bc2 = new MockBroadcastChannel(channelName) as BroadcastChannel;
 
   // Create a subscriber and a publisher.
   const subscriber = createBroadcastPublishingChannel(

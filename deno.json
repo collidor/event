@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "2.1.1",
+    "version": "2.2.0",
     "license": "MIT",
     "exports": {
         ".": "./src/main.ts",
@@ -41,8 +41,7 @@
             "ESNext",
             "deno.window",
             "deno.worker",
-            "deno.unstable",
-            "deno.webworker"
+            "deno.unstable"
         ],
         "noUncheckedIndexedAccess": true,
         "strict": true

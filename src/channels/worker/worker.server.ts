@@ -1,88 +1,61 @@
 import type {
   DataEvent,
+  MessagePortLike,
   PublishingChannel,
   PublishingEvent,
   StartEvent,
   SubscribeEvent,
   UnsubscribeEvent,
 } from "../../publishingEvents.type.ts";
+import { EventHandler } from "../eventHandler.ts";
 
 export function createWorkerPublishingChannel<
   TContext extends Record<string, any>,
 >(
+  port: MessagePortLike,
   context: TContext = {} as TContext,
+  options?: {
+    onConnect?: (port: MessagePortLike) => void;
+  },
 ): PublishingChannel<TContext> {
-  // In a dedicated worker, `self` (the worker global) acts as our MessagePort.
-  const port = self as unknown as MessagePort;
+  const eventHandler = new EventHandler(context);
+  eventHandler.ports.add(port);
 
-  const listeners = new Map<
-    string,
-    ((data: any, context: Record<string, any>) => void)[]
-  >();
-  const subscribers = new Map<string, number>();
-
-  const handleEvent: {
-    [K in Pick<PublishingEvent["data"], "type">["type"]]: (
-      event: (DataEvent | SubscribeEvent | UnsubscribeEvent) & { type: K },
-    ) => void;
-  } = {
-    data(event) {
-      if (listeners.has(event.name)) {
-        listeners.get(event.name)!.forEach((cb) => cb(event.data, context));
-      }
-    },
-    subscribe(event) {
-      subscribers.set(
-        event.name,
-        (subscribers.get(event.name) || 0) + 1,
-      );
-    },
-    unsubscribe(event) {
-      subscribers.set(
-        event.name,
-        (subscribers.get(event.name) || 0) - 1,
-      );
-    },
-    start() {
-      for (const name of listeners.keys()) {
-        port.postMessage({
-          name,
-          type: "subscribe",
-        } as SubscribeEvent);
-      }
-    },
+  port.onmessage = (ev: PublishingEvent) => {
+    if (ev.data.type in eventHandler) {
+      eventHandler[ev.data.type](ev.data as any, port);
+    }
   };
-
-  port.addEventListener("message", (ev: PublishingEvent) => {
-    handleEvent[ev.data.type](ev.data as any);
-  });
-
   // Notify that the worker is ready.
   port.postMessage({ type: "start" } as StartEvent);
 
+  if (options?.onConnect) {
+    options.onConnect(port);
+  }
+
   return {
     subscribe(name, callback): void {
-      if (!listeners.has(name)) {
-        listeners.set(name, []);
+      if (!eventHandler.listeners.has(name)) {
+        eventHandler.listeners.set(name, []);
       }
       port.postMessage({
         name,
         type: "subscribe",
       } as SubscribeEvent);
-      listeners.get(name)!.push(callback as any);
+      eventHandler.listeners.get(name)!.push(callback as any);
     },
     unsubscribe(name, callback): void {
       port.postMessage({
         type: "unsubscribe",
         name,
       } as UnsubscribeEvent);
-      if (!listeners.has(name)) return;
-      listeners.set(
+      if (!eventHandler.listeners.has(name)) return;
+      eventHandler.listeners.set(
         name,
-        listeners.get(name)!.filter((cb) => cb !== callback),
+        eventHandler.listeners.get(name)!.filter((cb) => cb !== callback),
       );
-      if (listeners.get(name)!.length === 0) {
-        listeners.delete(name);
+      if (eventHandler.listeners.get(name)!.length === 0) {
+        eventHandler.listeners.delete(name);
         port.postMessage({
           name,
           type: "unsubscribe",
@@ -90,7 +63,10 @@ export function createWorkerPublishingChannel<
       }
     },
     publish(event): void {
-      if ((subscribers.get(event.constructor.name) || 0) > 0) {
+      if (
+        (eventHandler.portSubscriptions.get(event.constructor.name)?.size ||
+          0) > 0
+      ) {
         port.postMessage({
           name: event.constructor.name,
           data: event.data,

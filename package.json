@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "2.1.1",
+    "version": "2.2.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -36,7 +36,8 @@
     },
     "scripts": {
         "test": "deno test",
-        "build": "tsup"
+        "build": "tsup",
+        "dev": "tsup --watch"
     },
     "keywords": [
         "event",

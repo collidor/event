@@ -3,6 +3,11 @@ import type { PublishingChannel } from "./publishingEvents.type.ts";
 
 export type Type<T> = new (...args: any[]) => T;
 
+export type EventHandler<
+  TEvent extends Event<any>,
+  TData = TEvent extends Event<infer D> ? D : unknown,
+> = (data: TData, context: Record<string, any>) => void;
+
 export class EventBus<
   TContext extends Record<string, any> = Record<string, any>,
 > {
