@@ -6,13 +6,7 @@ import { CounterUpdatedEvent } from "./events/counterUpdated.event";
 let count = 0;
 
 export const eventBus = new EventBus({
-  publishingChannel: createSharedWorkerPublishingChannel(self as unknown as SharedWorkerGlobalScope,  {}, {onSubscribe: (name) => {
-    if (name === CounterUpdatedEvent.name) {
-      eventBus.emit(new CounterUpdatedEvent(count));
-    }
-
-
-  }}),
+  publishingChannel: createSharedWorkerPublishingChannel(self as unknown as SharedWorkerGlobalScope)
 });
 
 eventBus.on(CounterClickedEvent, () => {

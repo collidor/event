@@ -84,9 +84,22 @@ Inside your dedicated worker script:
 
 ```ts
 import { createWorkerPublishingChannel } from "@collidor/event/worker/server";
+import { EventBus } from "@collidor/event";
+import { ClickEvent } from "./events/click.event";
+import { CountUpdatedEvent } from "./events/counter.event";
 
-const serverChannel = createWorkerPublishingChannel({ server: true });
-// Use serverChannel.subscribe(), publish(), etc. within the worker.
+const serverChannel = createWorkerPublishingChannel();
+
+const eventBus = new EventBus({
+    publishingChannel: serverChannel,
+});
+
+let count = 0;
+
+eventBus.on(ClickEvent, () => {
+    count++;
+    eventBus.emit(new CountUpdatedEvent(count));
+});
 ```
 
 **Client Side (Main Thread):**
@@ -110,10 +123,22 @@ export const eventBus = new EventBus({
 Inside your shared worker script:
 
 ```ts
+import { EventBus } from "@collidor/event";
 import { createSharedWorkerPublishingChannel } from "@collidor/event/worker/shared/server";
+import { CounterClickedEvent } from "./events/counterClicked.event";
+import { CounterUpdatedEvent } from "./events/counterUpdated.event";
 
-const serverChannel = createSharedWorkerPublishingChannel(self, { server: true });
-// The channel automatically listens for new connections.
+let count = 0;
+
+export const eventBus = new EventBus({
+  publishingChannel: createSharedWorkerPublishingChannel(self as unknown as SharedWorkerGlobalScope)
+});
+
+eventBus.on(CounterClickedEvent, () => {
+  console.log("Counter clicked");
+    count++;
+    eventBus.emit(new CounterUpdatedEvent(count));
+});
 ```
 
 **Client Side (Main Thread):**
