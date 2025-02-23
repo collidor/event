@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { EventBus } from "./eventBus.ts";
 import { Event } from "./eventModel.ts";
-import type { PublishingChannel } from "./publishingEvents.type.ts";
+import type { Channel } from "./channel.type.ts";
 
 // Test event classes
 class UserCreated extends Event<string> {}
@@ -63,7 +63,7 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
   };
 
   const bus = new EventBus({
-    publishingChannel: mockChannel as unknown as PublishingChannel<
+    publishingChannel: mockChannel as unknown as Channel<
       Record<string, any>
     >,
   });

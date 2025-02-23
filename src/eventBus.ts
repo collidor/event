@@ -1,5 +1,5 @@
 import type { Event } from "./eventModel.ts";
-import type { PublishingChannel } from "./publishingEvents.type.ts";
+import type { Channel } from "./channel.type.ts";
 
 export type Type<T> = new (...args: any[]) => T;
 
@@ -14,16 +14,16 @@ export class EventBus<
   private listeners: {
     [key: string]: Set<((arg: any, context: TContext) => void)>;
   } = {};
-  private publishingChannel?: PublishingChannel<TContext>;
+  private channel?: Channel<TContext>;
   private context: TContext;
 
   constructor(
     options?: {
       context?: TContext;
-      publishingChannel?: PublishingChannel<TContext>;
+      publishingChannel?: Channel<TContext>;
     },
   ) {
-    this.publishingChannel = options?.publishingChannel;
+    this.channel = options?.publishingChannel;
     this.context = options?.context || {} as TContext;
   }
 
@@ -40,8 +40,8 @@ export class EventBus<
       this.off(event, callback);
     });
     this.listeners[name].add(callback);
-    if (this.publishingChannel) {
-      this.publishingChannel.subscribe(name, callback);
+    if (this.channel) {
+      this.channel.subscribe(name, callback);
     }
   }
 
@@ -54,13 +54,16 @@ export class EventBus<
     if (!this.listeners[name]) {
       return;
     }
+    if (this.channel) {
+      this.channel.unsubscribe(name, callback);
+    }
     this.listeners[name].delete(callback);
   }
 
   emit<T extends Event<any>>(event: T, context?: TContext): void {
     const name = event.constructor.name;
-    if (this.publishingChannel) {
-      this.publishingChannel.publish(event, context ?? this.context);
+    if (this.channel) {
+      this.channel.publish(event, context ?? this.context);
     }
     return this.emitByName(name, event.data, context);
   }

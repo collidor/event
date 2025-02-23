@@ -3,30 +3,30 @@ import type { Event } from "./eventModel.ts";
 export type VerboseLevel = "debug" | "info" | "warn" | "error";
 
 export type DataEvent = {
-  type: "data";
+  type: "dataEvent";
   name: string;
   data: any;
   source?: string;
 };
 
 export type SubscribeEvent = {
-  type: "subscribe";
+  type: "subscribeEvent";
   name: string | string[];
   source?: string;
 };
 
 export type UnsubscribeEvent = {
-  type: "unsubscribe";
+  type: "unsubscribeEvent";
   name: string | string[];
   source?: string;
 };
 
 export type StartEvent = {
-  type: "start";
+  type: "startEvent";
   source?: string;
 };
 
-export type PublishingEvent = MessageEvent<
+export type ChannelEvent = MessageEvent<
   DataEvent | SubscribeEvent | UnsubscribeEvent | StartEvent
 >;
 
@@ -35,7 +35,7 @@ export type MessagePortLike = {
   onmessageerror?: ((ev: MessageEvent) => void) | null;
   postMessage: (message: any) => void;
 };
-export type PublishingChannel<
+export type Channel<
   TContext extends Record<string, any> = Record<string, any>,
 > = {
   publish: (event: Event<any>, context?: TContext) => void;

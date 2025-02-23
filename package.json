@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "2.2.2",
+    "version": "3.0.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -12,26 +12,6 @@
             "types": "./dist/main.d.ts",
             "import": "./dist/main.js",
             "require": "./dist/main.cjs"
-        },
-        "./broadcastChannel": {
-            "types": "./dist/channels/broadcast/broadcastPublishingChannel.d.ts",
-            "import": "./dist/channels/broadcast/broadcastPublishingChannel.js",
-            "require": "./dist/channels/broadcast/broadcastPublishingChannel.cjs"
-        },
-        "./worker/client": {
-            "types": "./dist/channels/worker/worker.client.d.ts",
-            "import": "./dist/channels/worker/worker.client.js",
-            "require": "./dist/channels/worker/worker.client.cjs"
-        },
-        "./worker/server": {
-            "types": "./dist/channels/worker/worker.server.d.ts",
-            "import": "./dist/channels/worker/worker.server.js",
-            "require": "./dist/channels/worker/worker.server.cjs"
-        },
-        "./worker/shared/server": {
-            "types": "./dist/channels/worker/sharedWorker.server.d.ts",
-            "import": "./dist/channels/worker/sharedWorker.server.js",
-            "require": "./dist/channels/worker/sharedWorker.server.cjs"
         }
     },
     "scripts": {
