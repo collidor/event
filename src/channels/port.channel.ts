@@ -21,12 +21,12 @@ export type PortChannelOptions = {
 
 export class PortChannel<TContext extends Record<string, any>>
   implements Channel<TContext> {
-  public listeners = new Map<
+  public listeners: Map<
     string,
     ((data: any, context: TContext) => void)[]
-  >();
-  public portSubscriptions = new Map<string, Set<MessagePortLike>>();
-  public ports = new Set<MessagePortLike>();
+  > = new Map();
+  public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
+  public ports: Set<MessagePortLike> = new Set();
   public context: TContext;
   public options: PortChannelOptions;
 
