@@ -1,6 +1,8 @@
-import { EventBus } from "@collidor/event";
-import { createBroadcastPublishingChannel } from "@collidor/event/broadcastPublishingChannel";
+import { EventBus, PortChannel } from "@collidor/event";
 
-export const eventBus = new EventBus({
-    publishingChannel: createBroadcastPublishingChannel("test-channel"),
-});
+const broadcastChannel = new BroadcastChannel("test-channel");
+
+const channel = new PortChannel();
+channel.addPort(broadcastChannel);
+
+export const eventBus = new EventBus({ channel });

@@ -1,13 +1,24 @@
-import { EventBus } from "@collidor/event";
-import { createSharedWorkerPublishingChannel } from "@collidor/event/worker/shared/server";
+import { EventBus, PortChannel } from "@collidor/event";
 import { CounterClickedEvent } from "./events/counterClicked.event";
 import { CounterUpdatedEvent } from "./events/counterUpdated.event";
 
 let count = 0;
 
+const channel = new PortChannel({}, {
+  onSubscribe(name) {
+    if (name === CounterUpdatedEvent.name) {
+      eventBus.emit(new CounterUpdatedEvent(count));
+    }
+  }
+})
 export const eventBus = new EventBus({
-  publishingChannel: createSharedWorkerPublishingChannel(self as unknown as SharedWorkerGlobalScope)
+  channel,
 });
+
+(self as unknown as SharedWorkerGlobalScope).onconnect = (event) => {
+  const port = event.ports[0];
+  channel.addPort(port);
+}
 
 eventBus.on(CounterClickedEvent, () => {
   console.log("Counter clicked");
