@@ -63,7 +63,7 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
   };
 
   const bus = new EventBus({
-    publishingChannel: mockChannel as unknown as Channel<
+    channel: mockChannel as unknown as Channel<
       Record<string, any>
     >,
   });

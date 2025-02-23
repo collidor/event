@@ -1,262 +1,168 @@
-[![Codecov](https://codecov.io/gh/collidor/event/branch/main/graph/badge.svg)](https://codecov.io/gh/collidor/event)
-
 # @collidor/event
 
-A small library to create, register, and listen to events. This library provides an event bus with a customizable event model and supports cross-context event propagation using multiple publishing channels:
+[![Codecov](https://codecov.io/gh/collidor/event/branch/main/graph/badge.svg)](https://codecov.io/gh/collidor/event)
+[![npm version](https://img.shields.io/npm/v/@collidor/event)](https://www.npmjs.com/package/@collidor/event)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- A **BroadcastChannel–based** publishing channel for communication across browser tabs or windows.
-- A **Worker–based** publishing channel for dedicated workers.
-- A **SharedWorker–based** publishing channel for multi-client scenarios.
+A lightweight event system with cross-context communication. Perfect for modern web apps, workers, and distributed systems.
 
-## Features
-
-- **Event Bus** – Easily register, unregister, and emit events.
-- **Custom Event Model** – Extend the base `Event` class to create your own events.
-- **Publishing Channels** – Choose from multiple channels for propagating events between contexts:
-  - **BroadcastChannel** – For browser tabs and windows.
-  - **Worker** – For dedicated workers.
-  - **SharedWorker** – For shared worker scenarios with dynamic client connections.
-- **Flexible Contexts** – Pass custom context data along with your events.
+---
 
 ## Installation
 
-### Deno
-
-Import directly using a jsr specifier:
-
 ```ts
-import { EventBus, Event } from "jsr:@collidor/event";
+:bash[npm]`npm install @collidor/event`
 ```
 
-### Node.js / npm
+---
 
-Install via npm:
+## Core Features
 
-```bash
-npm install @collidor/event
-```
+- Class-based event system with strict typing
+- Cross-context communication (Window ↔ Worker ↔ Tab)
+- Built-in support for BroadcastChannel/SharedWorker
+- Context propagation & AbortController integration
 
-Then import it:
+## Basic Usage
 
-```ts
-import { EventBus, Event } from "@collidor/event";
-```
-
-## Usage
-
-### Creating Custom Events
-
-Extend the `Event` class from `eventModel.ts`:
-
-```ts
+:typescript
+```ts [Event Definition]
 import { Event } from "@collidor/event";
 
-export class MyEvent extends Event<{ message: string }> {}
+class UserUpdate extends Event<{ id: string }> {}
+class SystemAlert extends Event<string> {}
 ```
 
-### Setting Up the Event Bus with a Publishing Channel
-
-Create an instance of the `EventBus` and subscribe to your custom event. You can choose the appropriate publishing channel for your use case.
-
-#### Using the BroadcastChannel Publishing Channel
-
-```ts
-import { EventBus, MyEvent } from "@collidor/event";
-import { createBroadcastPublishingChannel } from "@collidor/event/broadcastChannel";
-
-const publishingChannel = createBroadcastPublishingChannel("my-channel", { user: "John Doe" }, "main");
-
-export const eventBus = new EventBus({
-  context: { user: "John Doe" },
-  publishingChannel,
-});
-
-eventBus.on(MyEvent, (data, context) => {
-  console.log("Received event:", data.message);
-});
-```
-
-#### Using the Worker Publishing Channel
-
-**Server Side (Dedicated Worker):**
-
-Inside your dedicated worker script:
-
-```ts
-import { createWorkerPublishingChannel } from "@collidor/event/worker/server";
+```ts [Event Bus]
 import { EventBus } from "@collidor/event";
-import { ClickEvent } from "./events/click.event";
-import { CountUpdatedEvent } from "./events/counter.event";
 
-const serverChannel = createWorkerPublishingChannel();
+const bus = new EventBus();
 
-const eventBus = new EventBus({
-    publishingChannel: serverChannel,
+// Subscribe
+bus.on(UserUpdate, (data) => {
+  console.log(`User ${data.id} updated`);
 });
 
-let count = 0;
-
-eventBus.on(ClickEvent, () => {
-    count++;
-    eventBus.emit(new CountUpdatedEvent(count));
-});
+// Publish
+bus.emit(new UserUpdate({ id: "123" }));
 ```
 
-**Client Side (Main Thread):**
+---
 
-On the client side, create a worker and set up the client channel:
+## Cross-Context Patterns
 
-```ts
-import { EventBus } from "@collidor/event";
-import { createClientWorkerPublishingChannel } from "@collidor/event/worker/client";
+### 1. BroadcastChannel (Tab-to-Tab)
 
-const worker = new Worker(new URL("./worker.ts", import.meta.url).href, { type: "module" });
-export const eventBus = new EventBus({
-  publishingChannel: createClientWorkerPublishingChannel(worker),
-});
+```ts [Tab A]
+import { PortChannel, EventBus } from "@collidor/event";
+
+const channel = new PortChannel();
+const bus = new EventBus({ channel });
+channel.addPort(new BroadcastChannel("app-channel"));
+
+class TabMessage extends Event<string> {}
+bus.emit(new TabMessage("Hello from Tab A!"));
 ```
 
-#### Using the SharedWorker Publishing Channel
+```ts [Tab B]
+import { PortChannel, EventBus } from "@collidor/event";
 
-**Server Side (Shared Worker):**
+const channel = new PortChannel();
+const bus = new EventBus({ channel });
+channel.addPort(new BroadcastChannel("app-channel"));
 
-Inside your shared worker script:
-
-```ts
-import { EventBus } from "@collidor/event";
-import { createSharedWorkerPublishingChannel } from "@collidor/event/worker/shared/server";
-import { CounterClickedEvent } from "./events/counterClicked.event";
-import { CounterUpdatedEvent } from "./events/counterUpdated.event";
-
-let count = 0;
-
-export const eventBus = new EventBus({
-  publishingChannel: createSharedWorkerPublishingChannel(self as unknown as SharedWorkerGlobalScope)
-});
-
-eventBus.on(CounterClickedEvent, () => {
-  console.log("Counter clicked");
-    count++;
-    eventBus.emit(new CounterUpdatedEvent(count));
+bus.on(TabMessage, (msg) => {
+  console.log("Received:", msg); // "Hello from Tab A!"
 });
 ```
 
-**Client Side (Main Thread):**
+---
 
-On the client side, create a SharedWorker and configure the client channel:
+### 2. SharedWorker (Multi-Context)
 
-```ts
-import { EventBus } from "@collidor/event";
-import { createClientWorkerPublishingChannel } from "@collidor/event/worker/client";
+```ts [Main Thread]
+import { PortChannel, EventBus } from "@collidor/event";
 
-const sharedWorker = new SharedWorker(new URL("./sharedWorker.ts", import.meta.url).href, { type: "module" });
-export const eventBus = new EventBus({
-  publishingChannel: createClientWorkerPublishingChannel(sharedWorker.port),
+const channel = new PortChannel();
+const bus = new EventBus({ channel });
+const worker = new SharedWorker("worker.js");
+
+channel.addPort(worker.port);
+
+class TaskEvent extends Event<{ id: string }> {}
+bus.emit(new TaskEvent({ id: "shared-task" }));
+```
+
+```ts [worker.js]
+import { PortChannel, EventBus } from "@collidor/event";
+
+const channel = new PortChannel();
+const bus = new EventBus({ channel });
+
+// Handle new connections
+self.onconnect = (event) => {
+  const port = event.ports[0];
+  channel.addPort(port);
+};
+
+self.start();
+
+bus.on(TaskEvent, ({ id }) => {
+  console.log("Processing shared task:", id);
 });
 ```
 
-### Emitting Events
+---
 
-Emit events using the `emit` method:
+## Advanced Patterns
 
-```ts
-eventBus.emit(new MyEvent("Hello, world!"));
+### Context Propagation
+```ts [Global Context]
+const bus = new EventBus({
+  context: { requestId: "123" }
+});
+
+bus.on(DataEvent, (data, ctx) => {
+  console.log(ctx.requestId); // "123"
+});
+
+// Override per emission
+bus.emit(new DataEvent(), { requestId: "temp" });
 ```
 
-## Examples
+---
 
-Check the examples [folder](https://github.com/collidor/event/tree/main/examples).
+## API Overview
 
-## API Reference
+### EventBus
+- `on(event, handler, signal?)`
+- `off(event, handler)`
+- `emit(event, context?)`
+- `emitByName(name, data, context?)`
 
-### Event Model
+### PortChannel
+- `addPort(port)`
+- `removePort(port)`
+- `publish(event)`
+- `subscribe(name, callback)`
+- `unsubscribe(name, callback)`
 
-The base event model, defined in `eventModel.ts`:
+---
 
-```ts
-export abstract class Event<T = unknown> {
-  public data: T;
+## Development
 
-  constructor(data: T) {
-    this.data = data;
-  }
-}
+```bash [Commands]
+# Install dependencies
+npm install
+
+# Run tests (requires Deno)
+npm test
+
+# Build project
+npm run build
 ```
 
-### Event Bus
+---
 
-The `EventBus` class, defined in `eventBus.ts`, provides the main API:
-
-```ts
-export class EventBus<TContext extends Record<string, any> = Record<string, any>> {
-  on<T>(
-    event: new (...args: any[]) => Event<T>,
-    callback: (data: T, context: TContext) => void,
-    abortSignal?: AbortSignal,
-  ): void;
-
-  off<T>(
-    event: new (...args: any[]) => Event<T>,
-    callback: (data: T, context: TContext) => void,
-  ): void;
-
-  emit<T>(event: Event<T>): void;
-}
-```
-
-### Publishing Channels
-
-#### BroadcastChannel Publishing Channel
-
-Defined via the `PublishingChannel` interface in [publishingEvents.type.ts](./publishingEvents.type.ts) and implemented by:
-
-```ts
-export function createBroadcastPublishingChannel<TContext extends Record<string, any>>(
-  nameOrBroadcastChannel: string | BroadcastChannel,
-  context: TContext,
-  source?: string,
-): PublishingChannel<TContext>;
-```
-
-This channel uses the browser’s native BroadcastChannel API to send and receive messages.
-
-#### Worker Publishing Channel
-
-For dedicated workers, see:
-
-```ts
-export function createWorkerPublishingChannel<TContext extends Record<string, any>>(
-  port: Worker | MessagePortLike,
-  context: TContext,
-  options?: { onConnect?: (port: MessagePort) => void }
-): PublishingChannel<TContext>;
-```
-
-#### SharedWorker Publishing Channel
-
-For SharedWorker scenarios (which support dynamic client connections), see:
-
-```ts
-export function createSharedWorkerPublishingChannel<TContext extends Record<string, any>>(
-  sharedWorker: SharedWorkerLike,
-  context: TContext,
-  options?: { onConnect?: (port: MessagePort) => void } & EventHandlerOptions
-): PublishingChannel<TContext>;
-```
-
-## Package Structure
-
-- **main.ts** – Re-exports the primary API (EventBus, Event, etc.).
-- **eventModel.ts** – Contains the abstract `Event` class.
-- **eventBus.ts** – Implements the EventBus class.
-- **channels/**
-  - **broadcastPublishingChannel.ts** – Provides the BroadcastChannel–based publishing channel.
-  - **worker/client.ts** – Provides the client-side Worker publishing channel.
-  - **worker/server.ts** – Provides the server-side Worker publishing channel.
-  - **worker/shared/server.ts** – Provides the SharedWorker–based publishing channel.
-- **publishingEvents.type.ts** – Contains type definitions for publishing events.
-- **eventHandler.ts** – Contains shared event handler logic for all channels.
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
+*MIT License | © 2024 [Alykam Burdzaki](https://alykam.com)*
+*[Report Issues](https://github.com/collidor/event/issues)*

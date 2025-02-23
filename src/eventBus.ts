@@ -20,10 +20,10 @@ export class EventBus<
   constructor(
     options?: {
       context?: TContext;
-      publishingChannel?: Channel<TContext>;
+      channel?: Channel<TContext>;
     },
   ) {
-    this.channel = options?.publishingChannel;
+    this.channel = options?.channel;
     this.context = options?.context || {} as TContext;
   }
 

@@ -156,26 +156,35 @@ export class PortChannel<TContext extends Record<string, any>>
     }
   }
 
+  public removePort(port: MessagePortLike): void {
+    for (const [eventName, portSet] of this.portSubscriptions) {
+      portSet.delete(port);
+      if (portSet.size === 0) {
+        this.portSubscriptions.delete(eventName);
+      }
+    }
+    this.ports.delete(port);
+
+    if (this.options.onDisconnect) {
+      this.options.onDisconnect(port);
+    }
+  }
+
   public subscribe(
-    names: string | string[],
+    name: string,
     callback: (data: any, context: TContext) => void,
   ): void {
-    if (!Array.isArray(names)) {
-      names = [names];
+    if (!this.listeners.has(name)) {
+      this.listeners.set(name, []);
+    }
+    const callbacks = this.listeners.get(name);
+    if (callbacks) {
+      callbacks.push(callback as any);
     }
 
-    for (const name of names) {
-      if (!this.listeners.has(name)) {
-        this.listeners.set(name, []);
-      }
-      const callbacks = this.listeners.get(name);
-      if (callbacks) {
-        callbacks.push(callback as any);
-      }
-    }
     for (const port of this.ports) {
       port.postMessage({
-        name: names.length === 1 ? names[0] : names,
+        name,
         type: "subscribeEvent",
       } as SubscribeEvent);
     }
@@ -209,14 +218,13 @@ export class PortChannel<TContext extends Record<string, any>>
     const subscribedPorts = this.portSubscriptions.get(eventName);
 
     if (subscribedPorts && subscribedPorts.size > 0) {
-      // deno-lint-ignore no-unused-vars
       const dataEvent: DataEvent = {
         name: eventName,
         data: event.data,
         type: "dataEvent",
       };
       for (const port of subscribedPorts) {
-        port.postMessage(event);
+        port.postMessage(dataEvent);
       }
     }
   }

@@ -3,6 +3,7 @@ import { assertSpyCalls, spy } from "@std/testing/mock";
 
 import type { MessagePortLike } from "../main.ts";
 import { PortChannel } from "./port.channel.ts";
+import { Event } from "../eventModel.ts";
 
 // A simple FakeMessagePort that implements MessagePortLike for testing.
 class FakeMessagePort implements MessagePortLike {
@@ -93,4 +94,126 @@ Deno.test("Port Channel - should send subscribeEvent to all connected ports when
   assertEquals(fakePort.messages[2].name, "TestEvent2");
   assertEquals(fakePort.messages[3].type, "subscribeEvent");
   assertEquals(fakePort.messages[3].name, ["TestEvent", "TestEvent2"]);
+});
+
+Deno.test("Port Channel - unsubscribe should do nothing if no listeners", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  channel.unsubscribe("TestEvent", () => {});
+
+  assertEquals(port.messages.length, 1);
+});
+
+Deno.test("Port Channel - publish should send dataEvent to all subscribed ports", () => {
+  const channel = new PortChannel({});
+  const fakePort = new FakeMessagePort();
+  channel.addPort(fakePort);
+
+  class TestEvent extends Event<string> {
+  }
+
+  fakePort.onmessage?.({
+    data: { type: "subscribeEvent", name: "TestEvent" },
+  });
+
+  channel.publish(new TestEvent("Hello"));
+
+  assertEquals(fakePort.messages.length, 2);
+  assertEquals(fakePort.messages[1].type, "dataEvent");
+  assertEquals(fakePort.messages[1].name, "TestEvent");
+});
+
+Deno.test("Port Channel - should delete port on message error", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  port.onmessageerror?.({} as any);
+
+  assertEquals(channel.ports.has(port), false);
+});
+
+Deno.test("Port Channel - should call options.onStart when receives a start message", () => {
+  const port = new FakeMessagePort();
+  const onStart = spy();
+  const channel = new PortChannel({}, { onStart });
+  channel.addPort(port);
+
+  port.onmessage?.({ data: { type: "startEvent" } });
+
+  assertSpyCalls(onStart, 1);
+  assertEquals(onStart.calls[0]?.args, [port]);
+});
+
+Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  port.onmessage?.({
+    data: { type: "subscribeEvent", name: "TestEvent" },
+  });
+
+  assertEquals(channel.portSubscriptions.has("TestEvent"), true);
+  assertEquals(channel.portSubscriptions.get("TestEvent")?.has(port), true);
+});
+
+Deno.test("Port Channel - subscribeEvent should add port subscription for multiple event names", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  port.onmessage?.({
+    data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+  });
+
+  assertEquals(channel.portSubscriptions.has("TestEvent"), true);
+  assertEquals(channel.portSubscriptions.get("TestEvent")?.has(port), true);
+  assertEquals(channel.portSubscriptions.has("TestEvent2"), true);
+  assertEquals(channel.portSubscriptions.get("TestEvent2")?.has(port), true);
+});
+
+Deno.test("Port Channel - unsubscribeEvent should remove port subscription", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  port.onmessage?.({
+    data: { type: "subscribeEvent", name: "TestEvent" },
+  });
+
+  port.onmessage?.({
+    data: { type: "unsubscribeEvent", name: "TestEvent" },
+  });
+
+  assertEquals(channel.portSubscriptions.has("TestEvent"), false);
+});
+
+Deno.test("Port Channel - unsubscribeEvent should remove port subscription for multiple event names", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  port.onmessage?.({
+    data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+  });
+
+  port.onmessage?.({
+    data: { type: "unsubscribeEvent", name: ["TestEvent", "TestEvent2"] },
+  });
+
+  assertEquals(channel.portSubscriptions.has("TestEvent"), false);
+  assertEquals(channel.portSubscriptions.has("TestEvent2"), false);
+});
+
+Deno.test("Port Channel - remove port with removePort call", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+  channel.addPort(port);
+
+  channel.removePort(port);
+
+  assertEquals(channel.ports.has(port), false);
 });
