@@ -64,14 +64,15 @@ export class PortChannel<TContext extends Record<string, any>>
   }
 
   protected dataEvent(event: DataEvent, port: MessagePortLike): void {
+    const data = JSON.parse(event.data);
     if (this.options.onData) {
-      this.options.onData(event.data, port);
+      this.options.onData(data, port);
     }
     if (this.listeners.has(event.name)) {
       const callbacks = this.listeners.get(event.name);
       if (callbacks) {
         for (const cb of callbacks) {
-          cb(event.data, this.context);
+          cb(data, this.context);
         }
       }
     }
@@ -220,7 +221,7 @@ export class PortChannel<TContext extends Record<string, any>>
     if (subscribedPorts && subscribedPorts.size > 0) {
       const dataEvent: DataEvent = {
         name: eventName,
-        data: event.data,
+        data: JSON.stringify(event.data),
         type: "dataEvent",
       };
       for (const port of subscribedPorts) {
