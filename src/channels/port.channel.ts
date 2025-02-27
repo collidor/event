@@ -25,8 +25,9 @@ const defaultSerializer: Serializer<string> = {
   serialize: (data) => JSON.stringify(data),
   deserialize: (data) => JSON.parse(data),
 };
-export class PortChannel<TContext extends Record<string, any>>
-  implements Channel<TContext> {
+export class PortChannel<
+  TContext extends Record<string, any> = Record<string, any>,
+> implements Channel<TContext> {
   public listeners: Map<string, ((data: any, context: TContext) => void)[]> =
     new Map();
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
