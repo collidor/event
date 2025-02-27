@@ -27,11 +27,35 @@ export class EventBus<
     this.context = options?.context || {} as TContext;
   }
 
+  on<
+    T extends Event<any>[],
+    R extends T extends (Event<infer M>[])[number] ? M : unknown,
+  >(
+    event: Type<T[number]>[],
+    callback: (data: R, context: TContext) => void,
+    abortSignal?: AbortSignal,
+  ): void;
   on<T extends Event<any>, R extends T extends Event<infer M> ? M : unknown>(
     event: Type<T>,
     callback: (data: R, context: TContext) => void,
     abortSignal?: AbortSignal,
+  ): void;
+  on<
+    T extends Event<any> | Event<any>[],
+    R extends T extends (Event<infer M>[])[number] ? M
+      : T extends Event<infer N> ? N
+      : unknown,
+  >(
+    event: T extends Array<any> ? Type<T[number]>[] : Type<T>,
+    callback: (data: R, context: TContext) => void,
+    abortSignal?: AbortSignal,
   ): void {
+    if (Array.isArray(event)) {
+      event.forEach((e) => {
+        this.on(e, callback, abortSignal);
+      });
+      return;
+    }
     const name = event.name;
     if (!this.listeners[name]) {
       this.listeners[name] = new Set();
@@ -45,10 +69,30 @@ export class EventBus<
     }
   }
 
+  off<
+    T extends Event<any>[],
+    R extends T extends (Event<infer M>[])[number] ? M : unknown,
+  >(
+    event: Type<T>[],
+    callback: (data: R, context: TContext) => void,
+  ): void;
   off<T extends Event<any>, R extends T extends Event<infer M> ? M : unknown>(
     event: Type<T>,
     callback: (data: R, context: TContext) => void,
+  ): void;
+  off<
+    T extends Event<any> | Event<any>[],
+    R extends T extends (Event<infer M>[])[number] ? M
+      : T extends Event<infer N> ? N
+      : unknown,
+  >(
+    event: T extends Array<any> ? Type<T[number]>[] : Type<T>,
+    callback: (data: R, context: TContext) => void,
   ): void {
+    if (Array.isArray(event)) {
+      event.forEach((e) => this.off(e as any, callback));
+      return;
+    }
     const name = event.name;
 
     if (!this.listeners[name]) {

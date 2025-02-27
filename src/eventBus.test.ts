@@ -167,3 +167,15 @@ Deno.test("EventBus - should emit with custom context", () => {
   assertSpyCalls(mockListener, 1);
   assertEquals(mockListener.calls[0]?.args, ["custom-context", context]);
 });
+
+Deno.test("EventBus - should handle multiple events", () => {
+  const bus = new EventBus();
+  const userListener = spy();
+
+  bus.on([UserCreated, OrderPlaced], userListener);
+
+  bus.emit(new UserCreated("user1"));
+  bus.emit(new OrderPlaced(42));
+
+  assertSpyCalls(userListener, 2);
+});

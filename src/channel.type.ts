@@ -48,3 +48,41 @@ export type Channel<
     callback: (data: any, context: TContext) => void,
   ) => void;
 };
+
+type TypedArray =
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array;
+
+export type Clonable =
+  | Array<Clonable>
+  | ArrayBuffer
+  | ArrayBufferView
+  | Blob
+  | DataView
+  | Date
+  | Error
+  | Map<any, Clonable>
+  | Set<Clonable>
+  | { [key: string]: Clonable }
+  | RegExp
+  | string
+  | boolean
+  | null
+  | number
+  // deno-lint-ignore ban-types
+  | Number
+  // deno-lint-ignore ban-types
+  | String
+  | TypedArray;
+
+export type Serializer<S extends Clonable> = {
+  serialize: (data: any) => S;
+  deserialize: (data: S) => any;
+};

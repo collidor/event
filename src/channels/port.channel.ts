@@ -1,3 +1,4 @@
+import { Serializer } from "../channel.type.ts";
 import type {
   ChannelEvent,
   DataEvent,
@@ -17,29 +18,37 @@ export type PortChannelOptions = {
   onData?: (data: any, port: MessagePortLike) => void;
   onDisconnect?: (port: MessagePortLike) => void;
   onStart?: (port: MessagePortLike) => void;
+  serializer?: Serializer<any>;
 };
 
+const defaultSerializer: Serializer<string> = {
+  serialize: (data) => JSON.stringify(data),
+  deserialize: (data) => JSON.parse(data),
+};
 export class PortChannel<TContext extends Record<string, any>>
-  implements Channel<TContext>
-{
+  implements Channel<TContext> {
   public listeners: Map<string, ((data: any, context: TContext) => void)[]> =
     new Map();
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
   public ports: Set<MessagePortLike> = new Set();
   public context: TContext;
   public options: PortChannelOptions;
+  public serializer: Serializer<any> = defaultSerializer;
 
   constructor(
     context: TContext = {} as TContext,
-    options: PortChannelOptions = {}
+    options: PortChannelOptions = {},
   ) {
     this.context = context;
     this.options = options;
+    if (options.serializer) {
+      this.serializer = options.serializer;
+    }
   }
 
   protected addPortSubscription(
     port: MessagePortLike,
-    eventName: string
+    eventName: string,
   ): void {
     let set = this.portSubscriptions.get(eventName);
     if (!set) {
@@ -51,7 +60,7 @@ export class PortChannel<TContext extends Record<string, any>>
 
   protected removePortSubscription(
     port: MessagePortLike,
-    eventName: string
+    eventName: string,
   ): void {
     const set = this.portSubscriptions.get(eventName);
     if (set) {
@@ -63,7 +72,9 @@ export class PortChannel<TContext extends Record<string, any>>
   }
 
   protected dataEvent(event: DataEvent, port: MessagePortLike): void {
-    const data = event.data ? JSON.parse(event.data) : undefined;
+    const data = event.data
+      ? this.serializer.deserialize(event.data)
+      : undefined;
     if (this.options.onData) {
       this.options.onData(data, port);
     }
@@ -95,7 +106,7 @@ export class PortChannel<TContext extends Record<string, any>>
 
   protected unsubscribeEvent(
     event: UnsubscribeEvent,
-    port: MessagePortLike
+    port: MessagePortLike,
   ): void {
     if (Array.isArray(event.name)) {
       for (const name of event.name) {
@@ -170,7 +181,7 @@ export class PortChannel<TContext extends Record<string, any>>
 
   public subscribe(
     name: string,
-    callback: (data: any, context: TContext) => void
+    callback: (data: any, context: TContext) => void,
   ): void {
     if (!this.listeners.has(name)) {
       this.listeners.set(name, []);
@@ -190,14 +201,14 @@ export class PortChannel<TContext extends Record<string, any>>
 
   public unsubscribe(
     name: string,
-    callback: (data: any, context: TContext) => void
+    callback: (data: any, context: TContext) => void,
   ): void {
     if (!this.listeners.has(name)) return;
     const callbacks = this.listeners.get(name);
     if (callbacks) {
       this.listeners.set(
         name,
-        callbacks.filter((cb) => cb !== callback)
+        callbacks.filter((cb) => cb !== callback),
       );
     }
     if (this.listeners.get(name)!.length === 0) {
@@ -218,7 +229,7 @@ export class PortChannel<TContext extends Record<string, any>>
     if (subscribedPorts && subscribedPorts.size > 0) {
       const dataEvent: DataEvent = {
         name: eventName,
-        data: event.data ? JSON.stringify(event.data) : undefined,
+        data: event.data ? this.serializer.serialize(event.data) : undefined,
         type: "dataEvent",
       };
       for (const port of subscribedPorts) {
