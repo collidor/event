@@ -1,4 +1,4 @@
-import type { Serializer } from "../channel.type.ts";
+import type { Serializer } from "../types.ts";
 import type {
   ChannelEvent,
   DataEvent,

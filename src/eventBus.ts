@@ -1,5 +1,5 @@
 import type { Event } from "./eventModel.ts";
-import type { Channel } from "./channel.type.ts";
+import type { Channel } from "./types.ts";
 
 export type Type<T> = new (...args: any[]) => T;
 

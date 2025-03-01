@@ -10,8 +10,8 @@ A lightweight event system with cross-context communication. Perfect for modern 
 
 ## Installation
 
-```ts
-:bash[npm]`npm install @collidor/event`
+```bash
+npm install @collidor/event
 ```
 
 ---
@@ -25,7 +25,6 @@ A lightweight event system with cross-context communication. Perfect for modern 
 
 ## Basic Usage
 
-:typescript
 ```ts [Event Definition]
 import { Event } from "@collidor/event";
 
@@ -64,7 +63,7 @@ class TabMessage extends Event<string> {}
 bus.emit(new TabMessage("Hello from Tab A!"));
 ```
 
-```ts [Tab B]
+```ts
 import { PortChannel, EventBus } from "@collidor/event";
 
 const channel = new PortChannel();
@@ -80,7 +79,7 @@ bus.on(TabMessage, (msg) => {
 
 ### 2. SharedWorker (Multi-Context)
 
-```ts [Main Thread]
+```ts
 import { PortChannel, EventBus } from "@collidor/event";
 
 const channel = new PortChannel();
@@ -93,7 +92,7 @@ class TaskEvent extends Event<{ id: string }> {}
 bus.emit(new TaskEvent({ id: "shared-task" }));
 ```
 
-```ts [worker.js]
+```ts
 import { PortChannel, EventBus } from "@collidor/event";
 
 const channel = new PortChannel();
@@ -117,7 +116,7 @@ bus.on(TaskEvent, ({ id }) => {
 ## Advanced Patterns
 
 ### Context Propagation
-```ts [Global Context]
+```ts
 const bus = new EventBus({
   context: { requestId: "123" }
 });

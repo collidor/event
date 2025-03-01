@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { EventBus } from "./eventBus.ts";
 import { Event } from "./eventModel.ts";
-import type { Channel } from "./channel.type.ts";
+import type { Channel } from "./types.ts";
 
 // Test event classes
 class UserCreated extends Event<string> {}
