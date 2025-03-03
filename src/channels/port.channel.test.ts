@@ -84,6 +84,7 @@ Deno.test("Port Channel - should send subscribeEvent to all connected ports when
 
   fakePort.onmessage?.({
     data: { type: "startEvent" },
+    source: fakePort,
   });
 
   assertEquals(fakePort.messages.length, 4);
@@ -116,6 +117,7 @@ Deno.test("Port Channel - publish should send dataEvent to all subscribed ports"
 
   fakePort.onmessage?.({
     data: { type: "subscribeEvent", name: "TestEvent" },
+    source: fakePort,
   });
 
   channel.publish(new TestEvent("Hello"));
@@ -130,7 +132,9 @@ Deno.test("Port Channel - should delete port on message error", () => {
   const channel = new PortChannel({});
   channel.addPort(port);
 
-  port.onmessageerror?.({} as any);
+  port.onmessageerror?.({
+    source: port,
+  } as any);
 
   assertEquals(channel.ports.has(port), false);
 });
@@ -141,7 +145,7 @@ Deno.test("Port Channel - should call options.onStart when receives a start mess
   const channel = new PortChannel({}, { onStart });
   channel.addPort(port);
 
-  port.onmessage?.({ data: { type: "startEvent" } });
+  port.onmessage?.({ data: { type: "startEvent" }, source: port });
 
   assertSpyCalls(onStart, 1);
   assertEquals(onStart.calls[0]?.args, [port]);
@@ -154,6 +158,7 @@ Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
 
   port.onmessage?.({
     data: { type: "subscribeEvent", name: "TestEvent" },
+    source: port,
   });
 
   assertEquals(channel.portSubscriptions.has("TestEvent"), true);
@@ -167,6 +172,7 @@ Deno.test("Port Channel - subscribeEvent should add port subscription for multip
 
   port.onmessage?.({
     data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    source: port,
   });
 
   assertEquals(channel.portSubscriptions.has("TestEvent"), true);
@@ -182,10 +188,12 @@ Deno.test("Port Channel - unsubscribeEvent should remove port subscription", () 
 
   port.onmessage?.({
     data: { type: "subscribeEvent", name: "TestEvent" },
+    source: port,
   });
 
   port.onmessage?.({
     data: { type: "unsubscribeEvent", name: "TestEvent" },
+    source: port,
   });
 
   assertEquals(channel.portSubscriptions.has("TestEvent"), false);
@@ -198,10 +206,12 @@ Deno.test("Port Channel - unsubscribeEvent should remove port subscription for m
 
   port.onmessage?.({
     data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    source: port,
   });
 
   port.onmessage?.({
     data: { type: "unsubscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    source: port,
   });
 
   assertEquals(channel.portSubscriptions.has("TestEvent"), false);
@@ -216,4 +226,60 @@ Deno.test("Port Channel - remove port with removePort call", () => {
   channel.removePort(port);
 
   assertEquals(channel.ports.has(port), false);
+});
+
+Deno.test("Port Channel - emits internal PortChannelEvents", () => {
+  const port = new FakeMessagePort();
+  const channel = new PortChannel({});
+
+  {
+    const onConnect = spy();
+    channel.on("connectEvent", onConnect);
+    channel.addPort(port);
+    assertSpyCalls(onConnect, 1);
+  }
+
+  {
+    const onStart = spy();
+    channel.on("startEvent", onStart);
+    port.onmessage?.({ data: { type: "startEvent" }, source: port });
+    assertSpyCalls(onStart, 1);
+  }
+
+  {
+    const onSubscribe = spy();
+    channel.on("subscribeEvent", onSubscribe);
+    port.onmessage?.({
+      data: { type: "subscribeEvent", name: "TestEvent" },
+      source: port,
+    });
+    assertSpyCalls(onSubscribe, 1);
+  }
+
+  {
+    const onUnsubscribe = spy();
+    channel.on("unsubscribeEvent", onUnsubscribe);
+    port.onmessage?.({
+      data: { type: "unsubscribeEvent", name: "TestEvent" },
+      source: port,
+    });
+    assertSpyCalls(onUnsubscribe, 1);
+  }
+
+  {
+    const onData = spy();
+    channel.on("dataEvent", onData);
+    port.onmessage?.({
+      data: { type: "dataEvent", name: "TestEvent" },
+      source: port,
+    });
+    assertSpyCalls(onData, 1);
+  }
+
+  {
+    const onDisconnect = spy();
+    channel.on("disconnectEvent", onDisconnect);
+    channel.removePort(port);
+    assertSpyCalls(onDisconnect, 1);
+  }
 });

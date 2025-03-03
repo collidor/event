@@ -1,15 +1,33 @@
 import type { Serializer } from "../types.ts";
-import type {
-  ChannelEvent,
-  DataEvent,
-  Event,
-  MessagePortLike,
-  StartEvent,
-  SubscribeEvent,
-  UnsubscribeEvent,
+import {
+  type ChannelEvent,
+  type DataEvent,
+  EventBus,
+  type MessagePortLike,
+  type StartEvent,
+  type SubscribeEvent,
+  type UnsubscribeEvent,
 } from "../main.ts";
 
 import type { Channel } from "../main.ts";
+import { Event } from "../eventModel.ts";
+import type { Type } from "../eventBus.ts";
+
+export const PortEventTypes = [
+  "dataEvent",
+  "subscribeEvent",
+  "unsubscribeEvent",
+  "startEvent",
+  "connectEvent",
+  "disconnectEvent",
+  "startEvent",
+] as const;
+
+export const PortEvents = PortEventTypes.reduce((acc, event) => {
+  acc[event] = class extends Event {};
+  acc[event].prototype.name = event;
+  return acc;
+}, {} as Record<typeof PortEventTypes[number], Type<Event<any>>>);
 
 export type PortChannelOptions = {
   onSubscribe?: (name: string, port: MessagePortLike) => void;
@@ -25,6 +43,7 @@ const defaultSerializer: Serializer<string> = {
   serialize: (data) => JSON.stringify(data),
   deserialize: (data) => JSON.parse(data),
 };
+
 export class PortChannel<
   TContext extends Record<string, any> = Record<string, any>,
 > implements Channel<TContext> {
@@ -35,6 +54,8 @@ export class PortChannel<
   public context: TContext;
   public options: PortChannelOptions;
   public serializer: Serializer<any> = defaultSerializer;
+  public abortController = new AbortController();
+  private eventBus = new EventBus();
 
   constructor(
     context: TContext = {} as TContext,
@@ -79,6 +100,7 @@ export class PortChannel<
     if (this.options.onData) {
       this.options.onData(data, port);
     }
+    this.eventBus.emit(new PortEvents.dataEvent(data));
     if (this.listeners.has(event.name)) {
       const callbacks = this.listeners.get(event.name);
       if (callbacks) {
@@ -96,12 +118,14 @@ export class PortChannel<
         if (this.options.onSubscribe) {
           this.options.onSubscribe(name, port);
         }
+        this.eventBus.emit(new PortEvents.subscribeEvent());
       }
     } else {
       this.addPortSubscription(port, event.name);
       if (this.options.onSubscribe) {
         this.options.onSubscribe(event.name, port);
       }
+      this.eventBus.emit(new PortEvents.subscribeEvent());
     }
   }
 
@@ -115,12 +139,14 @@ export class PortChannel<
         if (this.options.onUnsubscribe) {
           this.options.onUnsubscribe(name, port);
         }
+        this.eventBus.emit(new PortEvents.unsubscribeEvent());
       }
     } else {
       this.removePortSubscription(port, event.name);
       if (this.options.onUnsubscribe) {
         this.options.onUnsubscribe(event.name, port);
       }
+      this.eventBus.emit(new PortEvents.unsubscribeEvent());
     }
   }
 
@@ -133,37 +159,45 @@ export class PortChannel<
     if (this.options.onStart) {
       this.options.onStart(port);
     }
+    this.eventBus.emit(new PortEvents.startEvent());
   }
+
+  protected onMessage = (event: ChannelEvent): void => {
+    const port = event.source as MessagePortLike;
+    if (
+      event.data.type in this &&
+      (event.data.type === "dataEvent" ||
+        event.data.type === "subscribeEvent" ||
+        event.data.type === "unsubscribeEvent" ||
+        event.data.type === "startEvent")
+    ) {
+      this[event.data.type](event.data as any, port);
+    }
+  };
+
+  protected onMessageError = (event: ChannelEvent): void => {
+    const port = event.source as MessagePortLike;
+    for (const [eventName, portSet] of this.portSubscriptions) {
+      portSet.delete(port);
+      if (portSet.size === 0) {
+        this.portSubscriptions.delete(eventName);
+      }
+    }
+    this.ports.delete(port);
+  };
 
   public addPort(port: MessagePortLike): void {
     this.ports.add(port);
-    port.onmessage = (ev: ChannelEvent) => {
-      if (
-        ev.data.type in this &&
-        (ev.data.type === "dataEvent" ||
-          ev.data.type === "subscribeEvent" ||
-          ev.data.type === "unsubscribeEvent" ||
-          ev.data.type === "startEvent")
-      ) {
-        this[ev.data.type](ev.data as any, port);
-      }
-    };
 
-    port.onmessageerror = () => {
-      for (const [eventName, portSet] of this.portSubscriptions) {
-        portSet.delete(port);
-        if (portSet.size === 0) {
-          this.portSubscriptions.delete(eventName);
-        }
-      }
-      this.ports.delete(port);
-    };
+    port.onmessage = this.onMessage;
+    port.onmessageerror = this.onMessageError;
 
     port.postMessage({ type: "startEvent" } as StartEvent);
 
     if (this.options.onConnect) {
       this.options.onConnect(port);
     }
+    this.eventBus.emit(new PortEvents.connectEvent());
   }
 
   public removePort(port: MessagePortLike): void {
@@ -178,6 +212,7 @@ export class PortChannel<
     if (this.options.onDisconnect) {
       this.options.onDisconnect(port);
     }
+    this.eventBus.emit(new PortEvents.disconnectEvent());
   }
 
   public subscribe(
@@ -223,7 +258,7 @@ export class PortChannel<
     }
   }
 
-  publish(event: Event<any>): void {
+  public publish(event: Event<any>): void {
     const eventName = event.constructor.name;
     const subscribedPorts = this.portSubscriptions.get(eventName);
 
@@ -237,5 +272,24 @@ export class PortChannel<
         port.postMessage(dataEvent);
       }
     }
+  }
+
+  public on<T extends typeof PortEventTypes[number]>(
+    event: T,
+    callback: (ev: InstanceType<typeof PortEvents[T]>) => void,
+    signal?: AbortSignal,
+  ): void {
+    this.eventBus.on(
+      PortEvents[event],
+      callback,
+      signal || this.abortController.signal,
+    );
+  }
+
+  public off<T extends typeof PortEventTypes[number]>(
+    event: T,
+    callback: (ev: InstanceType<typeof PortEvents[T]>) => void,
+  ): void {
+    this.eventBus.off(PortEvents[event], callback);
   }
 }
