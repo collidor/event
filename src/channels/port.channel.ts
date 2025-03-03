@@ -177,8 +177,7 @@ export class PortChannel<
     this.removePort(port);
   }
 
-  protected onMessage = (event: ChannelEvent): void => {
-    const port = event.source as MessagePortLike;
+  protected onMessage(event: ChannelEvent, port: MessagePortLike): void {
     if (
       event.data.type in this &&
       (event.data.type === "dataEvent" ||
@@ -189,10 +188,9 @@ export class PortChannel<
     ) {
       this[event.data.type](event.data as any, port);
     }
-  };
+  }
 
-  protected onMessageError = (event: ChannelEvent): void => {
-    const port = event.source as MessagePortLike;
+  protected onMessageError(event: ChannelEvent, port: MessagePortLike): void {
     for (const [eventName, portSet] of this.portSubscriptions) {
       portSet.delete(port);
       if (portSet.size === 0) {
@@ -200,13 +198,13 @@ export class PortChannel<
       }
     }
     this.ports.delete(port);
-  };
+  }
 
   public addPort(port: MessagePortLike): void {
     this.ports.add(port);
 
-    port.onmessage = this.onMessage;
-    port.onmessageerror = this.onMessageError;
+    port.onmessage = (event) => this.onMessage(event, port);
+    port.onmessageerror = (event) => this.onMessageError(event, port);
 
     port.postMessage({ type: "startEvent" } as StartEvent);
 
