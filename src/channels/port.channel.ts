@@ -23,7 +23,10 @@ export const PortEventTypes = [
   "startEvent",
 ] as const;
 
-export const PortEvents = PortEventTypes.reduce((acc, event) => {
+export const PortEvents: Record<
+  typeof PortEventTypes[number],
+  Type<Event<any>>
+> = PortEventTypes.reduce((acc, event) => {
   acc[event] = class extends Event {};
   acc[event].prototype.name = event;
   return acc;
@@ -54,8 +57,16 @@ export class PortChannel<
   public context: TContext;
   public options: PortChannelOptions;
   public serializer: Serializer<any> = defaultSerializer;
-  public abortController = new AbortController();
-  private eventBus = new EventBus();
+  public abortController: AbortController = new AbortController();
+  private eventBus: EventBus = new EventBus();
+  [Symbol.dispose](): void {
+    this.abortController.abort();
+
+    this.ports.forEach((port) => {
+      port.postMessage({ type: "closeEvent" } as CloseEvent);
+      this.removePort(port);
+    });
+  }
 
   constructor(
     context: TContext = {} as TContext,
@@ -162,6 +173,10 @@ export class PortChannel<
     this.eventBus.emit(new PortEvents.startEvent());
   }
 
+  protected closeEvent(_event: CloseEvent, port: MessagePortLike): void {
+    this.removePort(port);
+  }
+
   protected onMessage = (event: ChannelEvent): void => {
     const port = event.source as MessagePortLike;
     if (
@@ -169,7 +184,8 @@ export class PortChannel<
       (event.data.type === "dataEvent" ||
         event.data.type === "subscribeEvent" ||
         event.data.type === "unsubscribeEvent" ||
-        event.data.type === "startEvent")
+        event.data.type === "startEvent" ||
+        event.data.type === "closeEvent")
     ) {
       this[event.data.type](event.data as any, port);
     }

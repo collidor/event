@@ -6,28 +6,28 @@ export type DataEvent = {
   type: "dataEvent";
   name: string;
   data: any;
-  source?: string;
 };
 
 export type SubscribeEvent = {
   type: "subscribeEvent";
   name: string | string[];
-  source?: string;
 };
 
 export type UnsubscribeEvent = {
   type: "unsubscribeEvent";
   name: string | string[];
-  source?: string;
 };
 
 export type StartEvent = {
   type: "startEvent";
-  source?: string;
+};
+
+export type CloseEvent = {
+  type: "closeEvent";
 };
 
 export type ChannelEvent = MessageEvent<
-  DataEvent | SubscribeEvent | UnsubscribeEvent | StartEvent
+  DataEvent | SubscribeEvent | UnsubscribeEvent | StartEvent | CloseEvent
 >;
 
 export type MessagePortLike = {
