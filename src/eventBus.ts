@@ -106,16 +106,19 @@ export class EventBus<
 
   emit<T extends Event<any>>(event: T, context?: TContext): void {
     const name = event.constructor.name;
-    if (this.channel) {
-      this.channel.publish(event, context ?? this.context);
-    }
+
     return this.emitByName(name, event.data, context);
   }
 
   emitByName(name: string, data: any, context?: TContext): void {
+    if (this.channel) {
+      this.channel.publish(name, data, context ?? this.context);
+    }
+
     if (!this.listeners[name]) {
       return;
     }
+
     this.listeners[name].forEach((listener) =>
       listener(data, context ?? this.context)
     );

@@ -38,7 +38,7 @@ export type MessagePortLike = {
 export type Channel<
   TContext extends Record<string, any> = Record<string, any>,
 > = {
-  publish: (event: Event<any>, context?: TContext) => void;
+  publish: (event: string, data: any, context?: TContext) => void;
   subscribe: (
     event: string,
     callback: (data: any, context: TContext) => void,

@@ -120,7 +120,9 @@ Deno.test("Port Channel - publish should send dataEvent to all subscribed ports"
     currentTarget: fakePort,
   });
 
-  channel.publish(new TestEvent("Hello"));
+  const event = new TestEvent("Hello");
+
+  channel.publish(TestEvent.name, event.data);
 
   assertEquals(fakePort.messages.length, 2);
   assertEquals(fakePort.messages[1].type, "dataEvent");

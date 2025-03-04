@@ -77,7 +77,11 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
   const event = new UserCreated("channel-test");
   bus.emit(event);
   assertSpyCalls(mockChannel.publish, 1);
-  assertEquals(mockChannel.publish.calls[0]?.args, [event, {}]);
+  assertEquals(mockChannel.publish.calls[0]?.args, [
+    event.constructor.name,
+    event.data,
+    {},
+  ]);
 });
 
 Deno.test("EventBus - should handle multiple listeners", () => {

@@ -272,14 +272,13 @@ export class PortChannel<
     }
   }
 
-  public publish(event: Event<any>): void {
-    const eventName = event.constructor.name;
-    const subscribedPorts = this.portSubscriptions.get(eventName);
+  public publish(name: string, data: any): void {
+    const subscribedPorts = this.portSubscriptions.get(name);
 
     if (subscribedPorts && subscribedPorts.size > 0) {
       const dataEvent: DataEvent = {
-        name: eventName,
-        data: event.data ? this.serializer.serialize(event.data) : undefined,
+        name,
+        data: data ? this.serializer.serialize(data) : undefined,
         type: "dataEvent",
       };
       for (const port of subscribedPorts) {
