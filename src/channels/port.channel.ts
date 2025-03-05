@@ -8,7 +8,6 @@ import {
   type SubscribeEvent,
   type UnsubscribeEvent,
 } from "../main.ts";
-
 import type { Channel } from "../main.ts";
 import { Event } from "../eventModel.ts";
 import type { Type } from "../eventBus.ts";
@@ -40,6 +39,8 @@ export type PortChannelOptions = {
   onDisconnect?: (port: MessagePortLike) => void;
   onStart?: (port: MessagePortLike) => void;
   serializer?: Serializer<any>;
+  /** Maximum time (in ms) to buffer events before they are discarded */
+  bufferTimeout?: number;
 };
 
 const defaultSerializer: Serializer<string> = {
@@ -59,6 +60,14 @@ export class PortChannel<
   public serializer: Serializer<any> = defaultSerializer;
   public abortController: AbortController = new AbortController();
   private eventBus: EventBus = new EventBus();
+  // --- New properties for buffering ---
+  protected bufferedEvents: Map<
+    string,
+    { event: DataEvent; timeoutId: number }[]
+  > = new Map();
+  protected bufferTimeout: number;
+  // --------------------------------------
+
   [Symbol.dispose](): void {
     this.abortController.abort();
 
@@ -77,6 +86,8 @@ export class PortChannel<
     if (options.serializer) {
       this.serializer = options.serializer;
     }
+    // Set the buffer timeout (default to 5000ms)
+    this.bufferTimeout = options.bufferTimeout ?? 5000;
   }
 
   protected addPortSubscription(
@@ -88,7 +99,18 @@ export class PortChannel<
       set = new Set<MessagePortLike>();
       this.portSubscriptions.set(eventName, set);
     }
+    // Check if this is the first subscriber
+    const wasEmpty = set.size === 0;
     set.add(port);
+    // If this is the first subscriber, flush buffered events (if any)
+    if (wasEmpty && this.bufferedEvents.has(eventName)) {
+      const events = this.bufferedEvents.get(eventName)!;
+      for (const buffered of events) {
+        port.postMessage(buffered.event);
+        clearTimeout(buffered.timeoutId);
+      }
+      this.bufferedEvents.delete(eventName);
+    }
   }
 
   protected removePortSubscription(
@@ -272,20 +294,42 @@ export class PortChannel<
     }
   }
 
+  // --- Updated publish to support buffering with a maximum timeout ---
   public publish(name: string, data: any): void {
+    const dataEvent: DataEvent = {
+      name,
+      data: data ? this.serializer.serialize(data) : undefined,
+      type: "dataEvent",
+    };
     const subscribedPorts = this.portSubscriptions.get(name);
-
     if (subscribedPorts && subscribedPorts.size > 0) {
-      const dataEvent: DataEvent = {
-        name,
-        data: data ? this.serializer.serialize(data) : undefined,
-        type: "dataEvent",
-      };
       for (const port of subscribedPorts) {
         port.postMessage(dataEvent);
       }
+    } else {
+      // Buffer the event if no ports are subscribed.
+      if (!this.bufferedEvents.has(name)) {
+        this.bufferedEvents.set(name, []);
+      }
+      const timeoutId = setTimeout(() => {
+        // Remove this event from the buffer after the timeout.
+        const events = this.bufferedEvents.get(name);
+        if (events) {
+          const index = events.findIndex((item) =>
+            item.timeoutId === timeoutId
+          );
+          if (index >= 0) {
+            events.splice(index, 1);
+          }
+          if (events.length === 0) {
+            this.bufferedEvents.delete(name);
+          }
+        }
+      }, this.bufferTimeout);
+      this.bufferedEvents.get(name)!.push({ event: dataEvent, timeoutId });
     }
   }
+  // ---------------------------------------------------------------
 
   public on<T extends typeof PortEventTypes[number]>(
     event: T,

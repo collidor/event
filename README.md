@@ -50,6 +50,14 @@ bus.emit(new UserUpdate({ id: "123" }));
 
 ## Cross-Context Patterns
 
+The PortChannel is the main exported channel, it accepts `MessagePortLike` ports, which
+have a `postMessage` method, and can set and use a `onmessage` property callback. This means that
+the browsers APIs like BroadcastChannel, Worker and SharedWorker will work by default.
+
+My plan is to add adapters later so other things can behave like ports, like Websockets, WebRTC, Http+SEE and Datagrams.
+
+The PortChannel will not emit events to ports that didn't send a message first telling that it has a subscriber for such event.
+
 ### 1. BroadcastChannel (Tab-to-Tab)
 
 ```ts [Tab A]
@@ -145,6 +153,51 @@ bus.emit(new DataEvent(), { requestId: "temp" });
 - `publish(event)`
 - `subscribe(name, callback)`
 - `unsubscribe(name, callback)`
+
+#### PortChannel sequence diagram
+
+```mermaid
+sequenceDiagram
+    participant S as Server PortChannel
+    participant MP as MessagePort
+    participant C as Client PortChannel
+
+    %% Server adds a MessagePort (acts as connecting port)
+    S->>MP: addPort(port)
+    Note over S,MP: Server attaches MessagePort
+
+    %% MessagePort forwards startEvent to the Client
+    MP->>C: onmessage({type: "startEvent"})
+    Note over C: Client receives startEvent and sets up message handlers
+
+    %% Client subscribes to "TestEvent"
+    C->>MP: postMessage({type:"subscribeEvent", name:"TestEvent"})
+    Note over C: Client tells that it has a subscription for "TestEvent"
+
+    %% MessagePort delivers subscribeEvent to Server
+    MP->>S: onmessage({type:"subscribeEvent", name:"TestEvent"})
+    Note over S: Server calls addPortSubscription("TestEvent")
+
+    %% If the Server had buffered events for "TestEvent", flush them:
+    alt Buffered events exist for "TestEvent"
+      S->>MP: postMessage(buffered dataEvent for "TestEvent")
+      MP->>C: onmessage(buffered dataEvent for "TestEvent")
+    else
+      Note over S: No buffered events to flush
+    end
+
+    %% Now, the Server publishes a new event "TestEvent"
+    S->>S: publish("TestEvent", data)
+    alt Subscriber exists
+      S->>MP: postMessage({type:"dataEvent", name:"TestEvent", data})
+      MP->>C: onmessage({type:"dataEvent", name:"TestEvent", data})
+      Note over C: Client processes the dataEvent
+    else
+      S->>S: Buffer event "TestEvent" with timeout
+      Note over S: Event buffered until a subscriber appears
+    end
+
+```
 
 ---
 

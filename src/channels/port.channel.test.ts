@@ -2,8 +2,12 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 
 import type { MessagePortLike } from "../main.ts";
-import { PortChannel } from "./port.channel.ts";
+import { PortChannel, PortChannelOptions } from "./port.channel.ts";
 import { Event } from "../eventModel.ts";
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // A simple FakeMessagePort that implements MessagePortLike for testing.
 class FakeMessagePort implements MessagePortLike {
@@ -284,4 +288,53 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
     channel.removePort(port);
     assertSpyCalls(onDisconnect, 1);
   }
+});
+
+Deno.test("Port Channel Buffer - buffered events are flushed when a port subscribes", async () => {
+  const options: PortChannelOptions = { bufferTimeout: 2000 };
+  const channel = new PortChannel({}, options);
+  // Publish an event with no subscribers.
+  channel.publish("TestEvent", "Hello");
+
+  // Create a FakeMessagePort and add it to the channel.
+  const port = new FakeMessagePort();
+  channel.addPort(port);
+
+  // Now subscribe to the event. This should trigger a subscribeEvent which in turn calls addPortSubscription,
+  // flushing any buffered events for "TestEvent" to the port.
+  port.onmessage?.({
+    data: { type: "subscribeEvent", name: "TestEvent" },
+    currentTarget: port,
+  });
+
+  // Allow some time for the buffered events to be flushed.
+  await delay(100);
+
+  // The port should now have received the buffered dataEvent.
+  // The first message is the "startEvent" from addPort.
+  // The subsequent messages should include a subscribeEvent (from subscribe) and then the flushed buffered event.
+  assert(port.messages.length >= 2, "Port should have received buffered event");
+  const flushed = port.messages.find((msg: any) =>
+    msg.type === "dataEvent" && msg.name === "TestEvent"
+  );
+  assert(flushed, "Buffered event should have been flushed to the port");
+  assertEquals(JSON.parse(flushed.data), "Hello");
+});
+
+Deno.test("Port Channel Buffer - buffered events are removed after timeout", async () => {
+  const options: PortChannelOptions = { bufferTimeout: 100 };
+  const channel = new PortChannel({}, options);
+  // Publish an event with no subscribers.
+  channel.publish("TestEvent", "Hello Timeout");
+
+  // Wait for longer than the buffer timeout.
+  await delay(150);
+
+  // Verify that the buffer for "TestEvent" has been cleared.
+  const buffered = (channel as any).bufferedEvents.get("TestEvent");
+  assertEquals(
+    buffered,
+    undefined,
+    "Buffered events should be cleared after timeout",
+  );
 });
