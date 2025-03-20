@@ -63,9 +63,7 @@ Deno.test("EventBus - should integrate with publishing channel", () => {
   };
 
   const bus = new EventBus({
-    channel: mockChannel as unknown as Channel<
-      Record<string, any>
-    >,
+    channel: mockChannel as unknown as Channel<Record<string, any>>,
   });
   const mockListener = spy();
 
@@ -182,4 +180,49 @@ Deno.test("EventBus - should handle multiple events", () => {
   bus.emit(new OrderPlaced(42));
 
   assertSpyCalls(userListener, 2);
+});
+
+Deno.test("EventBus - can receive array as off argument", () => {
+  const bus = new EventBus();
+  const userListener = spy();
+
+  bus.on([UserCreated, OrderPlaced], userListener);
+
+  bus.off([UserCreated, OrderPlaced], userListener);
+
+  bus.emit(new UserCreated("user1"));
+  bus.emit(new OrderPlaced(42));
+
+  assertSpyCalls(userListener, 0);
+});
+
+Deno.test("EventBus - can receive an unsubscribed event as off", () => {
+  const bus = new EventBus();
+  const userListener = spy();
+
+  bus.off([UserCreated, OrderPlaced], userListener);
+
+  bus.emit(new OrderPlaced(42));
+
+  assertSpyCalls(userListener, 0);
+});
+
+Deno.test("EventBus - calls channel.unsubscribe on off", () => {
+  const unsubscribeSpy = spy();
+  const bus = new EventBus({
+    channel: {
+      publish: spy(),
+      subscribe: spy(),
+      unsubscribe: unsubscribeSpy,
+    } as Channel,
+  });
+  const userListener = spy();
+
+  bus.on([UserCreated, OrderPlaced], userListener);
+  bus.off([UserCreated, OrderPlaced], userListener);
+
+  bus.emit(new OrderPlaced(42));
+
+  assertSpyCalls(userListener, 0);
+  assertSpyCalls(unsubscribeSpy, 2);
 });

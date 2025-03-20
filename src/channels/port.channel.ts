@@ -1,14 +1,15 @@
 import type { Serializer } from "../types.ts";
 import {
+  EventBus,
+  type Channel,
   type ChannelEvent,
   type DataEvent,
-  EventBus,
   type MessagePortLike,
   type StartEvent,
   type SubscribeEvent,
   type UnsubscribeEvent,
+  type CloseEvent,
 } from "../main.ts";
-import type { Channel, CloseEvent } from "../main.ts";
 import { Event } from "../eventModel.ts";
 import type { Type } from "../eventBus.ts";
 
@@ -23,13 +24,13 @@ export const PortEventTypes = [
 ] as const;
 
 export const PortEvents: Record<
-  typeof PortEventTypes[number],
+  (typeof PortEventTypes)[number],
   Type<Event<any>>
 > = PortEventTypes.reduce((acc, event) => {
   acc[event] = class extends Event {};
-  acc[event].prototype.name = event;
+  Object.defineProperty(acc[event], "name", { value: event });
   return acc;
-}, {} as Record<typeof PortEventTypes[number], Type<Event<any>>>);
+}, {} as Record<(typeof PortEventTypes)[number], Type<Event<any>>>);
 
 export type PortChannelOptions = {
   onSubscribe?: (name: string, port: MessagePortLike, source: string) => void;
@@ -39,7 +40,7 @@ export type PortChannelOptions = {
     data: any,
     port: MessagePortLike,
     source: string,
-    target?: string,
+    target?: string
   ) => void;
   onDisconnect?: (port: MessagePortLike, source: string) => void;
   onStart?: (port: MessagePortLike, source: string) => void;
@@ -52,12 +53,13 @@ export type PortChannelOptions = {
 
 const defaultSerializer: Serializer<string> = {
   serialize: (data) => JSON.stringify(data),
-  deserialize: (data) => data !== undefined ? JSON.parse(data) : undefined,
+  deserialize: (data) => (data !== undefined ? JSON.parse(data) : undefined),
 };
 
 export class PortChannel<
-  TContext extends Record<string, any> = Record<string, any>,
-> implements Channel<TContext> {
+  TContext extends Record<string, any> = Record<string, any>
+> implements Channel<TContext>
+{
   public id: string;
   public listeners: Map<string, ((data: any, context: TContext) => void)[]> =
     new Map();
@@ -86,9 +88,10 @@ export class PortChannel<
 
     this.ports.forEach((port) => {
       port.postMessage(
-        this.serializer.serialize(
-          { type: "closeEvent", source: this.id } as CloseEvent,
-        ),
+        this.serializer.serialize({
+          type: "closeEvent",
+          source: this.id,
+        } as CloseEvent)
       );
       this.removePort(port, this.id);
     });
@@ -96,7 +99,7 @@ export class PortChannel<
 
   constructor(
     context: TContext = {} as TContext,
-    options: PortChannelOptions = {},
+    options: PortChannelOptions = {}
   ) {
     this.context = context;
     this.options = options;
@@ -111,7 +114,7 @@ export class PortChannel<
   protected addPortSubscription(
     port: MessagePortLike,
     eventName: string,
-    source: string,
+    source: string
   ): void {
     let wasEmpty = false;
     {
@@ -169,7 +172,7 @@ export class PortChannel<
   protected removePortSubscription(
     port: MessagePortLike,
     eventName: string,
-    source: string,
+    source: string
   ): void {
     {
       const set = this.portSubscriptions.get(eventName);
@@ -215,7 +218,7 @@ export class PortChannel<
   protected dataEvent(event: DataEvent, port: MessagePortLike): void {
     const data = event.data;
 
-    if (event.target && event.target === this.id) {
+    if (event.target && event.target !== this.id) {
       // The event is meant for a different port, so ignore it.
       return;
     }
@@ -254,7 +257,7 @@ export class PortChannel<
 
   protected unsubscribeEvent(
     event: UnsubscribeEvent,
-    port: MessagePortLike,
+    port: MessagePortLike
   ): void {
     if (Array.isArray(event.name)) {
       for (const name of event.name) {
@@ -274,11 +277,13 @@ export class PortChannel<
   }
 
   protected startEvent(event: StartEvent, port: MessagePortLike): void {
-    port.postMessage(this.serializer.serialize({
-      name: Array.from(this.listeners.keys()),
-      type: "subscribeEvent",
-      source: this.id,
-    } as SubscribeEvent));
+    port.postMessage(
+      this.serializer.serialize({
+        name: Array.from(this.listeners.keys()),
+        type: "subscribeEvent",
+        source: this.id,
+      } as SubscribeEvent)
+    );
 
     if (this.options.onStart) {
       this.options.onStart(port, event.source);
@@ -292,6 +297,7 @@ export class PortChannel<
 
   protected onMessage(event: ChannelEvent, port: MessagePortLike): void {
     const data: ChannelEvent["data"] = this.serializer.deserialize(event.data);
+
     if (
       data.type in this &&
       (data.type === "dataEvent" ||
@@ -300,10 +306,7 @@ export class PortChannel<
         data.type === "startEvent" ||
         data.type === "closeEvent")
     ) {
-      this[data.type](
-        data as any,
-        port,
-      );
+      this[data.type](data as any, port);
     }
   }
 
@@ -387,7 +390,7 @@ export class PortChannel<
 
   public subscribe(
     name: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ): void {
     if (!this.listeners.has(name)) {
       this.listeners.set(name, []);
@@ -398,34 +401,38 @@ export class PortChannel<
     }
 
     for (const port of this.ports) {
-      port.postMessage(this.serializer.serialize({
-        name,
-        type: "subscribeEvent",
-        source: this.id,
-      } as SubscribeEvent));
+      port.postMessage(
+        this.serializer.serialize({
+          name,
+          type: "subscribeEvent",
+          source: this.id,
+        } as SubscribeEvent)
+      );
     }
   }
 
   public unsubscribe(
     name: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ): void {
     if (!this.listeners.has(name)) return;
     const callbacks = this.listeners.get(name);
     if (callbacks) {
       this.listeners.set(
         name,
-        callbacks.filter((cb) => cb !== callback),
+        callbacks.filter((cb) => cb !== callback)
       );
     }
     if (this.listeners.get(name)!.length === 0) {
       this.listeners.delete(name);
       for (const port of this.ports) {
-        port.postMessage(this.serializer.serialize({
-          name,
-          type: "unsubscribeEvent",
-          source: this.id,
-        } as UnsubscribeEvent));
+        port.postMessage(
+          this.serializer.serialize({
+            name,
+            type: "unsubscribeEvent",
+            source: this.id,
+          } as UnsubscribeEvent)
+        );
       }
     }
   }
@@ -453,7 +460,7 @@ export class PortChannel<
   public publish(
     name: string,
     data: any,
-    options?: { singleConsumer?: boolean; target?: string },
+    options?: { singleConsumer?: boolean; target?: string }
   ): void {
     const dataEvent: DataEvent = {
       name,
@@ -492,22 +499,23 @@ export class PortChannel<
       // round robbin to get the next port for the event
 
       const sourceSubscribers = this.sourceSubscriptions.get(name);
+
       if (sourceSubscribers) {
         const subscriberArray = Array.from(sourceSubscribers).flatMap(
           (source): Array<[MessagePortLike, string]> => {
-            return Array.from(this.idPorts.get(source) ?? []).map(
-              (port) => [port, source],
-            );
-          },
+            return Array.from(this.idPorts.get(source) ?? []).map((port) => [
+              port,
+              source,
+            ]);
+          }
         );
+
         const index = this.roundRobinIndices.get(name) || 0;
         const [selectedPort, selectedSource] =
           subscriberArray[index % subscriberArray.length]!;
-        this.roundRobinIndices.set(
-          name,
-          (index + 1) % subscriberArray.length,
-        );
+        this.roundRobinIndices.set(name, (index + 1) % subscriberArray.length);
         dataEvent.target = selectedSource;
+
         selectedPort.postMessage(this.serializer.serialize(dataEvent));
       }
     } else {
@@ -515,21 +523,21 @@ export class PortChannel<
     }
   }
 
-  public on<T extends typeof PortEventTypes[number]>(
+  public on<T extends (typeof PortEventTypes)[number]>(
     event: T,
-    callback: (ev: InstanceType<typeof PortEvents[T]>) => void,
-    signal?: AbortSignal,
+    callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void,
+    signal?: AbortSignal
   ): void {
     this.eventBus.on(
       PortEvents[event],
       callback,
-      signal || this.abortController.signal,
+      signal || this.abortController.signal
     );
   }
 
-  public off<T extends typeof PortEventTypes[number]>(
+  public off<T extends (typeof PortEventTypes)[number]>(
     event: T,
-    callback: (ev: InstanceType<typeof PortEvents[T]>) => void,
+    callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void
   ): void {
     this.eventBus.off(PortEvents[event], callback);
   }
