@@ -1,8 +1,8 @@
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 
 import type { MessagePortLike } from "../main.ts";
-import { PortChannel, PortChannelOptions } from "./port.channel.ts";
+import { PortChannel, type PortChannelOptions } from "./port.channel.ts";
 import { Event } from "../eventModel.ts";
 
 function delay(ms: number): Promise<void> {
@@ -16,7 +16,7 @@ class FakeMessagePort implements MessagePortLike {
   public onmessageerror: ((ev: MessageEvent) => void) | null = null;
 
   postMessage(message: any): void {
-    this.messages.push(message);
+    this.messages.push(JSON.parse(message));
   }
   start(): void {}
 }
@@ -47,7 +47,7 @@ Deno.test("Port Channel - addPort should call onConnect if provided", () => {
   channel.addPort(port);
 
   assertSpyCalls(onConnect, 1);
-  assertEquals(onConnect.calls[0]?.args, [port]);
+  assertEquals(onConnect.calls[0]?.args, [port, channel.id]);
 });
 
 Deno.test("Port Channel - subscribe adds listeners and publish subscribeEvent", () => {
@@ -87,7 +87,7 @@ Deno.test("Port Channel - should send subscribeEvent to all connected ports when
   channel.subscribe("TestEvent2", () => {});
 
   fakePort.onmessage?.({
-    data: { type: "startEvent" },
+    data: JSON.stringify({ type: "startEvent", source: crypto.randomUUID() }),
     currentTarget: fakePort,
   });
 
@@ -120,7 +120,11 @@ Deno.test("Port Channel - publish should send dataEvent to all subscribed ports"
   }
 
   fakePort.onmessage?.({
-    data: { type: "subscribeEvent", name: "TestEvent" },
+    data: JSON.stringify({
+      type: "subscribeEvent",
+      name: "TestEvent",
+      source: crypto.randomUUID(),
+    }),
     currentTarget: fakePort,
   });
 
@@ -151,10 +155,14 @@ Deno.test("Port Channel - should call options.onStart when receives a start mess
   const channel = new PortChannel({}, { onStart });
   channel.addPort(port);
 
-  port.onmessage?.({ data: { type: "startEvent" }, currentTarget: port });
+  const source = crypto.randomUUID();
+  port.onmessage?.({
+    data: JSON.stringify({ type: "startEvent", source }),
+    currentTarget: port,
+  });
 
   assertSpyCalls(onStart, 1);
-  assertEquals(onStart.calls[0]?.args, [port]);
+  assertEquals(onStart.calls[0]?.args, [port, source]);
 });
 
 Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
@@ -162,8 +170,9 @@ Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
   const channel = new PortChannel({});
   channel.addPort(port);
 
+  const source = crypto.randomUUID();
   port.onmessage?.({
-    data: { type: "subscribeEvent", name: "TestEvent" },
+    data: JSON.stringify({ type: "subscribeEvent", name: "TestEvent", source }),
     currentTarget: port,
   });
 
@@ -176,15 +185,31 @@ Deno.test("Port Channel - subscribeEvent should add port subscription for multip
   const channel = new PortChannel({});
   channel.addPort(port);
 
+  const source = crypto.randomUUID();
   port.onmessage?.({
-    data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    data: JSON.stringify({
+      type: "subscribeEvent",
+      name: ["TestEvent", "TestEvent2"],
+      source,
+    }),
     currentTarget: port,
   });
 
-  assertEquals(channel.portSubscriptions.has("TestEvent"), true);
   assertEquals(channel.portSubscriptions.get("TestEvent")?.has(port), true);
-  assertEquals(channel.portSubscriptions.has("TestEvent2"), true);
   assertEquals(channel.portSubscriptions.get("TestEvent2")?.has(port), true);
+
+  // event -> source
+  assertEquals(channel.sourceSubscriptions.get("TestEvent")?.has(source), true);
+  assertEquals(
+    channel.sourceSubscriptions.get("TestEvent2")?.has(source),
+    true,
+  );
+
+  // port -> source
+  assertEquals(channel.portIds.get(port)?.has(source), true);
+
+  // source -> port
+  assertEquals(channel.idPorts.get(source)?.has(port), true);
 });
 
 Deno.test("Port Channel - unsubscribeEvent should remove port subscription", () => {
@@ -192,17 +217,26 @@ Deno.test("Port Channel - unsubscribeEvent should remove port subscription", () 
   const channel = new PortChannel({});
   channel.addPort(port);
 
+  const source = crypto.randomUUID();
+
   port.onmessage?.({
-    data: { type: "subscribeEvent", name: "TestEvent" },
+    data: JSON.stringify({ type: "subscribeEvent", name: "TestEvent", source }),
     currentTarget: port,
   });
 
   port.onmessage?.({
-    data: { type: "unsubscribeEvent", name: "TestEvent" },
+    data: JSON.stringify({
+      type: "unsubscribeEvent",
+      name: "TestEvent",
+      source,
+    }),
     currentTarget: port,
   });
 
   assertEquals(channel.portSubscriptions.has("TestEvent"), false);
+  assertEquals(channel.idPorts.has(source), false);
+  assertEquals(channel.portIds.has(port), false);
+  assertEquals(channel.sourceSubscriptions.has("TestEvent"), false);
 });
 
 Deno.test("Port Channel - unsubscribeEvent should remove port subscription for multiple event names", () => {
@@ -210,13 +244,22 @@ Deno.test("Port Channel - unsubscribeEvent should remove port subscription for m
   const channel = new PortChannel({});
   channel.addPort(port);
 
+  const source = crypto.randomUUID();
   port.onmessage?.({
-    data: { type: "subscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    data: JSON.stringify({
+      type: "subscribeEvent",
+      name: ["TestEvent", "TestEvent2"],
+      source,
+    }),
     currentTarget: port,
   });
 
   port.onmessage?.({
-    data: { type: "unsubscribeEvent", name: ["TestEvent", "TestEvent2"] },
+    data: JSON.stringify({
+      type: "unsubscribeEvent",
+      name: ["TestEvent", "TestEvent2"],
+      source,
+    }),
     currentTarget: port,
   });
 
@@ -237,7 +280,7 @@ Deno.test("Port Channel - remove port with removePort call", () => {
 Deno.test("Port Channel - emits internal PortChannelEvents", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
-
+  const source = crypto.randomUUID();
   {
     const onConnect = spy();
     channel.on("connectEvent", onConnect);
@@ -248,7 +291,10 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
   {
     const onStart = spy();
     channel.on("startEvent", onStart);
-    port.onmessage?.({ data: { type: "startEvent" }, currentTarget: port });
+    port.onmessage?.({
+      data: JSON.stringify({ type: "startEvent", source }),
+      currentTarget: port,
+    });
     assertSpyCalls(onStart, 1);
   }
 
@@ -256,7 +302,11 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
     const onSubscribe = spy();
     channel.on("subscribeEvent", onSubscribe);
     port.onmessage?.({
-      data: { type: "subscribeEvent", name: "TestEvent" },
+      data: JSON.stringify({
+        type: "subscribeEvent",
+        name: "TestEvent",
+        source,
+      }),
       currentTarget: port,
     });
     assertSpyCalls(onSubscribe, 1);
@@ -266,7 +316,11 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
     const onUnsubscribe = spy();
     channel.on("unsubscribeEvent", onUnsubscribe);
     port.onmessage?.({
-      data: { type: "unsubscribeEvent", name: "TestEvent" },
+      data: JSON.stringify({
+        type: "unsubscribeEvent",
+        name: "TestEvent",
+        source,
+      }),
       currentTarget: port,
     });
     assertSpyCalls(onUnsubscribe, 1);
@@ -276,7 +330,7 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
     const onData = spy();
     channel.on("dataEvent", onData);
     port.onmessage?.({
-      data: { type: "dataEvent", name: "TestEvent" },
+      data: JSON.stringify({ type: "dataEvent", name: "TestEvent", source }),
       currentTarget: port,
     });
     assertSpyCalls(onData, 1);
@@ -299,11 +353,12 @@ Deno.test("Port Channel Buffer - buffered events are flushed when a port subscri
   // Create a FakeMessagePort and add it to the channel.
   const port = new FakeMessagePort();
   channel.addPort(port);
+  const source = crypto.randomUUID();
 
   // Now subscribe to the event. This should trigger a subscribeEvent which in turn calls addPortSubscription,
   // flushing any buffered events for "TestEvent" to the port.
   port.onmessage?.({
-    data: { type: "subscribeEvent", name: "TestEvent" },
+    data: JSON.stringify({ type: "subscribeEvent", name: "TestEvent", source }),
     currentTarget: port,
   });
 
@@ -318,7 +373,7 @@ Deno.test("Port Channel Buffer - buffered events are flushed when a port subscri
     msg.type === "dataEvent" && msg.name === "TestEvent"
   );
   assert(flushed, "Buffered event should have been flushed to the port");
-  assertEquals(JSON.parse(flushed.data), "Hello");
+  assertEquals(flushed.data, "Hello");
 });
 
 Deno.test("Port Channel Buffer - buffered events are removed after timeout", async () => {

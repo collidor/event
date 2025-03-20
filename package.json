@@ -16,6 +16,7 @@
     },
     "scripts": {
         "test": "deno test",
+        "test:coverage": "deno test --coverage=cov_profile && deno coverage --html cov_profile",
         "build": "tsup",
         "dev": "tsup --watch"
     },

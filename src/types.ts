@@ -1,29 +1,33 @@
-import type { Event } from "./eventModel.ts";
-
 export type VerboseLevel = "debug" | "info" | "warn" | "error";
 
 export type DataEvent = {
   type: "dataEvent";
   name: string;
   data: any;
+  source: string;
+  target?: string;
 };
 
 export type SubscribeEvent = {
   type: "subscribeEvent";
   name: string | string[];
+  source: string;
 };
 
 export type UnsubscribeEvent = {
   type: "unsubscribeEvent";
   name: string | string[];
+  source: string;
 };
 
 export type StartEvent = {
   type: "startEvent";
+  source: string;
 };
 
 export type CloseEvent = {
   type: "closeEvent";
+  source: string;
 };
 
 export type ChannelEvent = MessageEvent<

@@ -3,3 +3,4 @@ dist
 coverage
 cov.lcov
 report
+cov_profile
