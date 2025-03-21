@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "3.2.0",
+    "version": "4.0.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
@@ -16,7 +16,7 @@
     },
     "scripts": {
         "test": "deno test",
-        "test:coverage": "deno test --coverage=cov_profile && deno coverage --html cov_profile",
+        "test:coverage": "deno eval \"await Deno.remove('./cov_profile', { recursive: true })\" && deno test --coverage=cov_profile && deno coverage --html cov_profile",
         "build": "tsup",
         "dev": "tsup --watch"
     },

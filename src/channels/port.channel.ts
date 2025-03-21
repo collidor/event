@@ -1,14 +1,14 @@
 import type { Serializer } from "../types.ts";
 import {
-  EventBus,
   type Channel,
   type ChannelEvent,
+  type CloseEvent,
   type DataEvent,
+  EventBus,
   type MessagePortLike,
   type StartEvent,
   type SubscribeEvent,
   type UnsubscribeEvent,
-  type CloseEvent,
 } from "../main.ts";
 import { Event } from "../eventModel.ts";
 import type { Type } from "../eventBus.ts";
@@ -32,7 +32,9 @@ export const PortEvents: Record<
   return acc;
 }, {} as Record<(typeof PortEventTypes)[number], Type<Event<any>>>);
 
-export type PortChannelOptions = {
+export type PortChannelOptions<
+  TContext extends Record<string, any> = Record<string, any>,
+> = {
   onSubscribe?: (name: string, port: MessagePortLike, source: string) => void;
   onUnsubscribe?: (name: string, port: MessagePortLike, source: string) => void;
   onConnect?: (port: MessagePortLike, source: string) => void;
@@ -40,7 +42,7 @@ export type PortChannelOptions = {
     data: any,
     port: MessagePortLike,
     source: string,
-    target?: string
+    target?: string,
   ) => void;
   onDisconnect?: (port: MessagePortLike, source: string) => void;
   onStart?: (port: MessagePortLike, source: string) => void;
@@ -49,6 +51,7 @@ export type PortChannelOptions = {
   bufferTimeout?: number;
   /** the ID used to identify this end of the connection */
   id?: string;
+  context?: TContext;
 };
 
 const defaultSerializer: Serializer<string> = {
@@ -57,12 +60,19 @@ const defaultSerializer: Serializer<string> = {
 };
 
 export class PortChannel<
-  TContext extends Record<string, any> = Record<string, any>
-> implements Channel<TContext>
-{
+  TContext extends Record<string, any> = Record<string, any>,
+> implements Channel<TContext> {
+  // general
+  public context: TContext;
+  public options: PortChannelOptions;
+  public serializer: Serializer<any> = defaultSerializer;
+  public abortController: AbortController = new AbortController();
+  protected eventBus: EventBus = new EventBus();
   public id: string;
   public listeners: Map<string, ((data: any, context: TContext) => void)[]> =
     new Map();
+
+  // port stuff
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
   public ports: Set<MessagePortLike> = new Set();
   public idPorts: Map<string, Set<MessagePortLike>> = new Map();
@@ -70,18 +80,12 @@ export class PortChannel<
   public sourceSubscriptions: Map<string, Set<string>> = new Map();
   protected roundRobinIndices: Map<string, number> = new Map();
 
-  public context: TContext;
-  public options: PortChannelOptions;
-  public serializer: Serializer<any> = defaultSerializer;
-  public abortController: AbortController = new AbortController();
-  protected eventBus: EventBus = new EventBus();
-  // --- New properties for buffering ---
+  // buffering
   protected bufferedEvents: Map<
     string,
     { event: DataEvent; timeoutId: number }[]
   > = new Map();
   protected bufferTimeout: number;
-  // --------------------------------------
 
   [Symbol.dispose](): void {
     this.abortController.abort();
@@ -91,17 +95,16 @@ export class PortChannel<
         this.serializer.serialize({
           type: "closeEvent",
           source: this.id,
-        } as CloseEvent)
+        } as CloseEvent),
       );
       this.removePort(port, this.id);
     });
   }
 
   constructor(
-    context: TContext = {} as TContext,
-    options: PortChannelOptions = {}
+    options: PortChannelOptions<TContext> = {},
   ) {
-    this.context = context;
+    this.context = options.context ?? {} as TContext;
     this.options = options;
     if (options.serializer) {
       this.serializer = options.serializer;
@@ -114,7 +117,7 @@ export class PortChannel<
   protected addPortSubscription(
     port: MessagePortLike,
     eventName: string,
-    source: string
+    source: string,
   ): void {
     let wasEmpty = false;
     {
@@ -172,7 +175,7 @@ export class PortChannel<
   protected removePortSubscription(
     port: MessagePortLike,
     eventName: string,
-    source: string
+    source: string,
   ): void {
     {
       const set = this.portSubscriptions.get(eventName);
@@ -257,7 +260,7 @@ export class PortChannel<
 
   protected unsubscribeEvent(
     event: UnsubscribeEvent,
-    port: MessagePortLike
+    port: MessagePortLike,
   ): void {
     if (Array.isArray(event.name)) {
       for (const name of event.name) {
@@ -282,7 +285,7 @@ export class PortChannel<
         name: Array.from(this.listeners.keys()),
         type: "subscribeEvent",
         source: this.id,
-      } as SubscribeEvent)
+      } as SubscribeEvent),
     );
 
     if (this.options.onStart) {
@@ -390,7 +393,7 @@ export class PortChannel<
 
   public subscribe(
     name: string,
-    callback: (data: any, context: TContext) => void
+    callback: (data: any, context: TContext) => void,
   ): void {
     if (!this.listeners.has(name)) {
       this.listeners.set(name, []);
@@ -406,21 +409,21 @@ export class PortChannel<
           name,
           type: "subscribeEvent",
           source: this.id,
-        } as SubscribeEvent)
+        } as SubscribeEvent),
       );
     }
   }
 
   public unsubscribe(
     name: string,
-    callback: (data: any, context: TContext) => void
+    callback: (data: any, context: TContext) => void,
   ): void {
     if (!this.listeners.has(name)) return;
     const callbacks = this.listeners.get(name);
     if (callbacks) {
       this.listeners.set(
         name,
-        callbacks.filter((cb) => cb !== callback)
+        callbacks.filter((cb) => cb !== callback),
       );
     }
     if (this.listeners.get(name)!.length === 0) {
@@ -431,7 +434,7 @@ export class PortChannel<
             name,
             type: "unsubscribeEvent",
             source: this.id,
-          } as UnsubscribeEvent)
+          } as UnsubscribeEvent),
         );
       }
     }
@@ -460,7 +463,7 @@ export class PortChannel<
   public publish(
     name: string,
     data: any,
-    options?: { singleConsumer?: boolean; target?: string }
+    options?: { singleConsumer?: boolean; target?: string },
   ): void {
     const dataEvent: DataEvent = {
       name,
@@ -507,7 +510,7 @@ export class PortChannel<
               port,
               source,
             ]);
-          }
+          },
         );
 
         const index = this.roundRobinIndices.get(name) || 0;
@@ -526,18 +529,18 @@ export class PortChannel<
   public on<T extends (typeof PortEventTypes)[number]>(
     event: T,
     callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): void {
     this.eventBus.on(
       PortEvents[event],
       callback,
-      signal || this.abortController.signal
+      signal || this.abortController.signal,
     );
   }
 
   public off<T extends (typeof PortEventTypes)[number]>(
     event: T,
-    callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void
+    callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void,
   ): void {
     this.eventBus.off(PortEvents[event], callback);
   }

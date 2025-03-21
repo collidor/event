@@ -18,13 +18,15 @@ class FakeMessagePort implements MessagePortLike {
   constructor(public name = "FakeMessagePort") {}
 
   postMessage(message: any): void {
-    this.messages.push(JSON.parse(message));
+    this.messages.push(
+      typeof message === "string" ? JSON.parse(message) : message,
+    );
   }
   start(): void {}
 }
 
 Deno.test(
-  "Port Channel - addPort should add a port and listen to message events",
+  "PortChannel - addPort should add a port and listen to message events",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -33,10 +35,10 @@ Deno.test(
     assertEquals(channel.ports.has(port), true);
     assert(port.onmessage !== null, "onmessage should be set");
     assert(port.onmessageerror !== null, "onmessageerror should be set");
-  }
+  },
 );
 
-Deno.test("Port Channel - addPort should send start message to port", () => {
+Deno.test("PortChannel - addPort should send start message to port", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
   channel.addPort(port);
@@ -45,10 +47,10 @@ Deno.test("Port Channel - addPort should send start message to port", () => {
   assertEquals(port.messages[0].type, "startEvent");
 });
 
-Deno.test("Port Channel - addPort should call onConnect if provided", () => {
+Deno.test("PortChannel - addPort should call onConnect if provided", () => {
   const port = new FakeMessagePort();
   const onConnect = spy();
-  const channel = new PortChannel({}, { onConnect });
+  const channel = new PortChannel({ onConnect });
   channel.addPort(port);
 
   assertSpyCalls(onConnect, 1);
@@ -56,7 +58,7 @@ Deno.test("Port Channel - addPort should call onConnect if provided", () => {
 });
 
 Deno.test(
-  "Port Channel - subscribe adds listeners and publish subscribeEvent",
+  "PortChannel - subscribe adds listeners and publish subscribeEvent",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -68,11 +70,11 @@ Deno.test(
     assertEquals(port.messages.length, 2);
     assertEquals(port.messages[1].type, "subscribeEvent");
     assertEquals(port.messages[1].name, "TestEvent");
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - unsubscribe removes listeners and publish unsubscribeEvent",
+  "PortChannel - unsubscribe removes listeners and publish unsubscribeEvent",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -86,11 +88,11 @@ Deno.test(
     assertEquals(port.messages.length, 3);
     assertEquals(port.messages[2].type, "unsubscribeEvent");
     assertEquals(port.messages[2].name, "TestEvent");
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - should send subscribeEvent to all connected ports when start is received",
+  "PortChannel - should send subscribeEvent to all connected ports when start is received",
   () => {
     const channel = new PortChannel({});
     const fakePort = new FakeMessagePort();
@@ -112,11 +114,11 @@ Deno.test(
     assertEquals(fakePort.messages[2].name, "TestEvent2");
     assertEquals(fakePort.messages[3].type, "subscribeEvent");
     assertEquals(fakePort.messages[3].name, ["TestEvent", "TestEvent2"]);
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - unsubscribe should do nothing if no listeners",
+  "PortChannel - unsubscribe should do nothing if no listeners",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -125,11 +127,11 @@ Deno.test(
     channel.unsubscribe("TestEvent", () => {});
 
     assertEquals(port.messages.length, 1);
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - publish should send dataEvent to all subscribed ports",
+  "PortChannel - publish should send dataEvent to all subscribed ports",
   () => {
     const channel = new PortChannel({});
     const fakePort = new FakeMessagePort();
@@ -153,10 +155,10 @@ Deno.test(
     assertEquals(fakePort.messages.length, 2);
     assertEquals(fakePort.messages[1].type, "dataEvent");
     assertEquals(fakePort.messages[1].name, "TestEvent");
-  }
+  },
 );
 
-Deno.test("Port Channel - should delete port on message error", () => {
+Deno.test("PortChannel - should delete port on message error", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
   channel.addPort(port);
@@ -169,11 +171,11 @@ Deno.test("Port Channel - should delete port on message error", () => {
 });
 
 Deno.test(
-  "Port Channel - should call options.onStart when receives a start message",
+  "PortChannel - should call options.onStart when receives a start message",
   () => {
     const port = new FakeMessagePort();
     const onStart = spy();
-    const channel = new PortChannel({}, { onStart });
+    const channel = new PortChannel({ onStart });
     channel.addPort(port);
 
     const source = crypto.randomUUID();
@@ -184,10 +186,10 @@ Deno.test(
 
     assertSpyCalls(onStart, 1);
     assertEquals(onStart.calls[0]?.args, [port, source]);
-  }
+  },
 );
 
-Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
+Deno.test("PortChannel - subscribeEvent should add port subscription", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
   channel.addPort(port);
@@ -203,7 +205,7 @@ Deno.test("Port Channel - subscribeEvent should add port subscription", () => {
 });
 
 Deno.test(
-  "Port Channel - subscribeEvent should add port subscription for multiple event names",
+  "PortChannel - subscribeEvent should add port subscription for multiple event names",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -225,11 +227,11 @@ Deno.test(
     // event -> source
     assertEquals(
       channel.sourceSubscriptions.get("TestEvent")?.has(source),
-      true
+      true,
     );
     assertEquals(
       channel.sourceSubscriptions.get("TestEvent2")?.has(source),
-      true
+      true,
     );
 
     // port -> source
@@ -237,11 +239,11 @@ Deno.test(
 
     // source -> port
     assertEquals(channel.idPorts.get(source)?.has(port), true);
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - unsubscribeEvent should remove port subscription",
+  "PortChannel - unsubscribeEvent should remove port subscription",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -271,11 +273,11 @@ Deno.test(
     assertEquals(channel.idPorts.has(source), false);
     assertEquals(channel.portIds.has(port), false);
     assertEquals(channel.sourceSubscriptions.has("TestEvent"), false);
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - unsubscribeEvent should remove port subscription for multiple event names",
+  "PortChannel - unsubscribeEvent should remove port subscription for multiple event names",
   () => {
     const port = new FakeMessagePort();
     const channel = new PortChannel({});
@@ -302,10 +304,10 @@ Deno.test(
 
     assertEquals(channel.portSubscriptions.has("TestEvent"), false);
     assertEquals(channel.portSubscriptions.has("TestEvent2"), false);
-  }
+  },
 );
 
-Deno.test("Port Channel - remove port with removePort call", () => {
+Deno.test("PortChannel - remove port with removePort call", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
   channel.addPort(port);
@@ -315,7 +317,7 @@ Deno.test("Port Channel - remove port with removePort call", () => {
   assertEquals(channel.ports.has(port), false);
 });
 
-Deno.test("Port Channel - emits internal PortChannelEvents", () => {
+Deno.test("PortChannel - emits internal PortChannelEvents", () => {
   const port = new FakeMessagePort();
   const channel = new PortChannel({});
   const source = crypto.randomUUID();
@@ -388,10 +390,10 @@ Deno.test("Port Channel - emits internal PortChannelEvents", () => {
 });
 
 Deno.test(
-  "Port Channel Buffer - buffered events are flushed when a port subscribes",
+  "PortChannel Buffer - buffered events are flushed when a port subscribes",
   async () => {
     const options: PortChannelOptions = { bufferTimeout: 2000 };
-    const channel = new PortChannel({}, options);
+    const channel = new PortChannel(options);
     // Publish an event with no subscribers.
     channel.publish("TestEvent", "Hello");
 
@@ -419,21 +421,21 @@ Deno.test(
     // The subsequent messages should include a subscribeEvent (from subscribe) and then the flushed buffered event.
     assert(
       port.messages.length >= 2,
-      "Port should have received buffered event"
+      "Port should have received buffered event",
     );
     const flushed = port.messages.find(
-      (msg: any) => msg.type === "dataEvent" && msg.name === "TestEvent"
+      (msg: any) => msg.type === "dataEvent" && msg.name === "TestEvent",
     );
     assert(flushed, "Buffered event should have been flushed to the port");
     assertEquals(flushed.data, "Hello");
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel Buffer - buffered events are removed after timeout",
+  "PortChannel Buffer - buffered events are removed after timeout",
   async () => {
     const options: PortChannelOptions = { bufferTimeout: 100 };
-    const channel = new PortChannel({}, options);
+    const channel = new PortChannel(options);
     // Publish an event with no subscribers.
     channel.publish("TestEvent", "Hello Timeout");
 
@@ -445,9 +447,9 @@ Deno.test(
     assertEquals(
       buffered,
       undefined,
-      "Buffered events should be cleared after timeout"
+      "Buffered events should be cleared after timeout",
     );
-  }
+  },
 );
 
 function connectPorts(...ports: FakeMessagePort[]) {
@@ -466,11 +468,11 @@ function connectPorts(...ports: FakeMessagePort[]) {
 class TestEvent extends Event<string> {}
 
 Deno.test(
-  "Port Channel - should send event from one end to the other",
+  "PortChannel - should send event from one end to the other",
   async () => {
     const options: PortChannelOptions = { bufferTimeout: 100 };
-    const channel1 = new PortChannel({}, options);
-    const channel2 = new PortChannel({}, options);
+    const channel1 = new PortChannel(options);
+    const channel2 = new PortChannel(options);
 
     const port1 = new FakeMessagePort();
     const port2 = new FakeMessagePort();
@@ -496,14 +498,14 @@ Deno.test(
     await delay(150);
 
     assertEquals(testEventSpy.calls[0]?.args[0], "hello there");
-  }
+  },
 );
 
 Deno.test(
-  "Port Channel - should send event with single consumer to listener",
+  "PortChannel - should send event with single consumer to listener",
   async () => {
-    const channel1 = new PortChannel({}, { bufferTimeout: 100, id: "1" });
-    const channel2 = new PortChannel({}, { bufferTimeout: 100, id: "2" });
+    const channel1 = new PortChannel({ bufferTimeout: 100, id: "1" });
+    const channel2 = new PortChannel({ bufferTimeout: 100, id: "2" });
 
     const port1 = new FakeMessagePort("1");
     const port2 = new FakeMessagePort("2");
@@ -527,13 +529,13 @@ Deno.test(
     await delay(150);
 
     assertEquals(testEventSpy.calls[0]?.args[0], "hello there");
-  }
+  },
 );
 
-Deno.test("Port Channel - should send event for all consumers", async () => {
-  const channel1 = new PortChannel({}, { bufferTimeout: 100, id: "1" });
-  const channel2 = new PortChannel({}, { bufferTimeout: 100, id: "2" });
-  const channel3 = new PortChannel({}, { bufferTimeout: 100, id: "3" });
+Deno.test("PortChannel - should send event for all consumers", async () => {
+  const channel1 = new PortChannel({ bufferTimeout: 100, id: "1" });
+  const channel2 = new PortChannel({ bufferTimeout: 100, id: "2" });
+  const channel3 = new PortChannel({ bufferTimeout: 100, id: "3" });
 
   const port1 = new FakeMessagePort("1");
   const port2 = new FakeMessagePort("2");
@@ -564,10 +566,10 @@ Deno.test("Port Channel - should send event for all consumers", async () => {
   assertEquals(testEventSpy.calls.length, 2);
 });
 
-Deno.test("Port Channel - should send event for single consumer", async () => {
-  const channel1 = new PortChannel({}, { bufferTimeout: 100, id: "1" });
-  const channel2 = new PortChannel({}, { bufferTimeout: 100, id: "2" });
-  const channel3 = new PortChannel({}, { bufferTimeout: 100, id: "3" });
+Deno.test("PortChannel - should send event for single consumer", async () => {
+  const channel1 = new PortChannel({ bufferTimeout: 100, id: "1" });
+  const channel2 = new PortChannel({ bufferTimeout: 100, id: "2" });
+  const channel3 = new PortChannel({ bufferTimeout: 100, id: "3" });
 
   const port1 = new FakeMessagePort("1");
   const port2 = new FakeMessagePort("2");
@@ -621,11 +623,11 @@ Deno.test("Port Channel - should send event for single consumer", async () => {
 });
 
 Deno.test(
-  "Port Channel - should send event for targeted consumer",
+  "PortChannel - should send event for targeted consumer",
   async () => {
-    const channel1 = new PortChannel({}, { bufferTimeout: 100, id: "1" });
-    const channel2 = new PortChannel({}, { bufferTimeout: 100, id: "2" });
-    const channel3 = new PortChannel({}, { bufferTimeout: 100, id: "3" });
+    const channel1 = new PortChannel({ bufferTimeout: 100, id: "1" });
+    const channel2 = new PortChannel({ bufferTimeout: 100, id: "2" });
+    const channel3 = new PortChannel({ bufferTimeout: 100, id: "3" });
 
     const port1 = new FakeMessagePort("1");
     const port2 = new FakeMessagePort("2");
@@ -678,5 +680,108 @@ Deno.test(
 
     assertEquals(testEventSpy2.calls.length, 1);
     assertEquals(testEventSpy3.calls.length, 2);
-  }
+  },
 );
+
+Deno.test("PortChannel - default serializer should ignore undefined values", async () => {
+  const channel1 = new PortChannel({ bufferTimeout: 100, id: "1" });
+  const channel2 = new PortChannel({ bufferTimeout: 100, id: "2" });
+  const channel3 = new PortChannel({ bufferTimeout: 100, id: "3" });
+
+  const port1 = new FakeMessagePort("1");
+  const port2 = new FakeMessagePort("2");
+  const port3 = new FakeMessagePort("3");
+
+  connectPorts(port1, port2, port3);
+
+  channel1.addPort(port1);
+  channel2.addPort(port2);
+  channel3.addPort(port3);
+
+  const eventBus2 = new EventBus({
+    channel: channel2,
+  });
+
+  const eventBus3 = new EventBus({
+    channel: channel3,
+  });
+
+  const testEventSpy = spy();
+  eventBus2.on(TestEvent, testEventSpy);
+  eventBus3.on(TestEvent, testEventSpy);
+
+  channel1.publish("TestEvent", undefined);
+
+  await delay(150);
+
+  assertEquals(testEventSpy.calls.length, 2);
+  assertEquals(
+    testEventSpy.calls.every((call) => call.args[0] === undefined),
+    true,
+  );
+});
+
+Deno.test("PortChannel - should emit close event on Symbol.dispose call", async () => {
+  const port = new FakeMessagePort();
+
+  {
+    using channel = new PortChannel();
+    channel.addPort(port);
+    await delay(100);
+  }
+
+  assertEquals(port.messages.at(0).type, "startEvent");
+  assertEquals(port.messages.at(1).type, "closeEvent");
+});
+
+Deno.test("PortChannel - should accept custom serializer", async () => {
+  let receivedData: Uint8Array | undefined;
+  const serializer = {
+    deserialize(data: Uint8Array) {
+      const textDecoder = new TextDecoder();
+      receivedData = data;
+      return JSON.parse(textDecoder.decode(data));
+    },
+    serialize(data: any): Uint8Array {
+      const textEncoder = new TextEncoder();
+      return textEncoder.encode(JSON.stringify(data));
+    },
+  };
+  const channel = new PortChannel({
+    context: {},
+    serializer,
+  });
+  const channel2 = new PortChannel({
+    context: {},
+    serializer,
+  });
+
+  const port = new FakeMessagePort();
+  const port2 = new FakeMessagePort();
+
+  channel.addPort(port);
+  channel2.addPort(port2);
+
+  connectPorts(port, port2);
+
+  const eventBus = new EventBus(
+    { channel },
+  );
+
+  const eventBus2 = new EventBus(
+    { channel: channel2 },
+  );
+
+  await delay(50);
+
+  const eventSpy = spy();
+  eventBus.on(TestEvent, eventSpy);
+
+  eventBus2.emit(new TestEvent("Hello there"));
+
+  await delay(50);
+
+  assertSpyCalls(eventSpy, 1);
+  assertEquals(eventSpy.calls[0]?.args?.[0], "Hello there");
+  assertEquals(receivedData?.byteLength, 108);
+});
