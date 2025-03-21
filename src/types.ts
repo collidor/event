@@ -40,16 +40,20 @@ export type MessagePortLike = {
   postMessage: (message: any) => void;
 };
 export type Channel<
-  TContext extends Record<string, any> = Record<string, any>,
+  TContext extends Record<string, any> = Record<string, any>
 > = {
-  publish: (event: string, data: any, context?: TContext) => void;
+  publish: (
+    event: string,
+    data: any,
+    options?: { singleConsumer?: boolean; target?: string }
+  ) => void;
   subscribe: (
     event: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ) => void;
   unsubscribe: (
     event: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ) => void;
 };
 
