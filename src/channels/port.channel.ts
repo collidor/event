@@ -69,8 +69,10 @@ export class PortChannel<
   public abortController: AbortController = new AbortController();
   protected eventBus: EventBus = new EventBus();
   public id: string;
-  public listeners: Map<string, ((data: any, context: TContext) => void)[]> =
-    new Map();
+  public listeners: Map<
+    string,
+    ((data: any, context: TContext, event: DataEvent) => void)[]
+  > = new Map();
 
   // port stuff
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
@@ -234,7 +236,7 @@ export class PortChannel<
       const callbacks = this.listeners.get(event.name);
       if (callbacks) {
         for (const cb of callbacks) {
-          cb(data, this.context);
+          cb(data, this.context, event);
         }
       }
     }
