@@ -395,7 +395,7 @@ export class PortChannel<
 
   public subscribe(
     name: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext, dataEvent: DataEvent) => void,
   ): void {
     if (!this.listeners.has(name)) {
       this.listeners.set(name, []);
