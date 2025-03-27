@@ -200,20 +200,19 @@ export class PortChannel<
     }
 
     {
-      const set = this.idPorts.get(source);
-      if (set) {
-        set.delete(port);
-        if (set.size === 0) {
-          this.idPorts.delete(source);
-        }
-      }
-    }
-
-    {
       const set = this.portIds.get(port);
       if (set) {
         set.delete(source);
         if (set.size === 0) {
+          {
+            const set = this.idPorts.get(source);
+            if (set) {
+              set.delete(port);
+              if (set.size === 0) {
+                this.idPorts.delete(source);
+              }
+            }
+          }
           this.portIds.delete(port);
         }
       }
