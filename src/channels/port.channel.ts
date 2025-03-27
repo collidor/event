@@ -371,20 +371,19 @@ export class PortChannel<
     this.eventBus.emit(new PortEvents.disconnectEvent());
 
     if (source) {
-      const set = this.idPorts.get(source);
-
-      if (set) {
-        set.delete(port);
-        if (!set.size) {
-          this.idPorts.delete(source);
-        }
-      }
-    }
-
-    if (source) {
       const set = this.portIds.get(port);
       if (set) {
         set.delete(source);
+        {
+          const set = this.idPorts.get(source);
+
+          if (set) {
+            set.delete(port);
+            if (!set.size) {
+              this.idPorts.delete(source);
+            }
+          }
+        }
         if (set.size === 0) {
           this.portIds.delete(port);
         }
