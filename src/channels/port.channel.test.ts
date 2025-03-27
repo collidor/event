@@ -269,10 +269,22 @@ Deno.test(
       currentTarget: port,
     });
 
-    assertEquals(channel.portSubscriptions.has("TestEvent"), false);
-    assertEquals(channel.idPorts.has(source), false);
-    assertEquals(channel.portIds.has(port), false);
-    assertEquals(channel.sourceSubscriptions.has("TestEvent"), false);
+    assertEquals(
+      channel.portSubscriptions.has("TestEvent"),
+      false,
+      'channel.portSubscriptions.has("TestEvent")',
+    );
+    assertEquals(
+      channel.idPorts.has(source),
+      false,
+      "channel.idPorts.has(source)",
+    );
+    assertEquals(channel.portIds.has(port), false, "channel.portIds.has(port)");
+    assertEquals(
+      channel.sourceSubscriptions.has("TestEvent"),
+      false,
+      'channel.sourceSubscriptions.has("TestEvent")',
+    );
   },
 );
 

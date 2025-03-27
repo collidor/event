@@ -77,8 +77,8 @@ export class PortChannel<
   // port stuff
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
   public ports: Set<MessagePortLike> = new Set();
-  public idPorts: Map<string, Set<MessagePortLike>> = new Map();
-  public portIds: Map<MessagePortLike, Set<string>> = new Map();
+  public idPorts: Map<string, Map<MessagePortLike, number>> = new Map();
+  public portIds: Map<MessagePortLike, Map<string, number>> = new Map();
   public sourceSubscriptions: Map<string, Set<string>> = new Map();
   protected roundRobinIndices: Map<string, number> = new Map();
 
@@ -136,6 +136,7 @@ export class PortChannel<
 
     {
       let set = this.sourceSubscriptions.get(eventName);
+
       if (!set) {
         set = new Set<string>();
         this.sourceSubscriptions.set(eventName, set);
@@ -144,23 +145,23 @@ export class PortChannel<
     }
 
     {
-      let set = this.idPorts.get(source);
-      if (!set) {
-        set = new Set<MessagePortLike>();
-        this.idPorts.set(source, set);
+      let portCounts = this.idPorts.get(source);
+      if (!portCounts) {
+        portCounts = new Map<MessagePortLike, number>();
+        this.idPorts.set(source, portCounts);
       }
-
-      set.add(port);
+      const currentCount = portCounts.get(port) || 0;
+      portCounts.set(port, currentCount + 1);
     }
 
     {
-      let set = this.portIds.get(port);
-      if (!set) {
-        set = new Set<string>();
-        this.portIds.set(port, set);
+      let sourceCounts = this.portIds.get(port);
+      if (!sourceCounts) {
+        sourceCounts = new Map<string, number>();
+        this.portIds.set(port, sourceCounts);
       }
-
-      set.add(source);
+      const currentSourceCount = sourceCounts.get(source) || 0;
+      sourceCounts.set(source, currentSourceCount + 1);
     }
 
     // If this is the first subscriber, flush buffered events (if any)
@@ -191,6 +192,7 @@ export class PortChannel<
 
     {
       const set = this.sourceSubscriptions.get(eventName);
+
       if (set) {
         set.delete(source);
         if (set.size === 0) {
@@ -200,20 +202,31 @@ export class PortChannel<
     }
 
     {
-      const set = this.portIds.get(port);
-      if (set) {
-        set.delete(source);
-        if (set.size === 0) {
-          {
-            const set = this.idPorts.get(source);
-            if (set) {
-              set.delete(port);
-              if (set.size === 0) {
-                this.idPorts.delete(source);
-              }
-            }
+      const portCounts = this.idPorts.get(source);
+      if (portCounts) {
+        const currentCount = portCounts.get(port) || 0;
+        if (currentCount > 1) {
+          portCounts.set(port, currentCount - 1);
+        } else {
+          portCounts.delete(port);
+          if (portCounts.size === 0) {
+            this.idPorts.delete(source);
           }
-          this.portIds.delete(port);
+        }
+      }
+    }
+
+    {
+      const sourceCounts = this.portIds.get(port);
+      if (sourceCounts) {
+        const currentSourceCount = sourceCounts.get(source) || 0;
+        if (currentSourceCount > 1) {
+          sourceCounts.set(source, currentSourceCount - 1);
+        } else {
+          sourceCounts.delete(source);
+          if (sourceCounts.size === 0) {
+            this.portIds.delete(port);
+          }
         }
       }
     }
@@ -491,7 +504,7 @@ export class PortChannel<
         const ports = this.idPorts.get(options.target);
 
         if (ports) {
-          for (const port of ports) {
+          for (const port of ports.keys()) {
             port.postMessage(this.serializer.serialize(dataEvent));
           }
         }
@@ -506,7 +519,9 @@ export class PortChannel<
       if (sourceSubscribers) {
         const subscriberArray = Array.from(sourceSubscribers).flatMap(
           (source): Array<[MessagePortLike, string]> => {
-            return Array.from(this.idPorts.get(source) ?? []).map((port) => [
+            return Array.from(this.idPorts.get(source)?.keys() ?? []).map((
+              port,
+            ) => [
               port,
               source,
             ]);
