@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "4.0.6",
+    "version": "4.1.0",
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
