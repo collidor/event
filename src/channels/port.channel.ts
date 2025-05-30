@@ -22,6 +22,9 @@ export const PortEventTypes = [
   "disconnectEvent",
   "startEvent",
   "aliveEvent",
+  "disposedEvent",
+  "closeEvent",
+  "all",
 ] as const;
 
 export const PortEvents: Record<
@@ -116,6 +119,8 @@ export class PortChannel<
       clearInterval(this.aliveIntervalId);
       this.aliveIntervalId = null;
     }
+
+    this.eventBus.emit(new PortEvents.disposedEvent({ id: this.id }));
   }
 
   constructor(
@@ -130,6 +135,20 @@ export class PortChannel<
     this.bufferTimeout = options.bufferTimeout ?? 5000;
     this.aliveInterval = options.aliveInterval ?? 2500; // default to 2.5 seconds
     this.id = options.id ?? crypto.randomUUID();
+
+    this.eventBus.on([
+      PortEvents.dataEvent,
+      PortEvents.subscribeEvent,
+      PortEvents.unsubscribeEvent,
+      PortEvents.startEvent,
+      PortEvents.closeEvent,
+      PortEvents.aliveEvent,
+      PortEvents.connectEvent,
+      PortEvents.disconnectEvent,
+      PortEvents.disposedEvent,
+    ], (event: any) => {
+      this.eventBus.emit(new PortEvents.all(event));
+    }, this.abortController.signal);
   }
 
   protected addPortSubscription(
@@ -189,6 +208,10 @@ export class PortChannel<
       }
       this.bufferedEvents.delete(eventName);
     }
+
+    this.eventBus.emit(
+      new PortEvents.subscribeEvent({ eventName, port, source, id: this.id }),
+    );
   }
 
   protected removePortSubscription(
@@ -246,6 +269,15 @@ export class PortChannel<
         }
       }
     }
+
+    this.eventBus.emit(
+      new PortEvents.unsubscribeEvent({
+        eventName,
+        port,
+        source,
+        id: this.id,
+      }),
+    );
   }
 
   protected dataEvent(event: DataEvent, port: MessagePortLike): void {
@@ -268,6 +300,16 @@ export class PortChannel<
         }
       }
     }
+
+    this.eventBus.emit(
+      new PortEvents.dataEvent({
+        data,
+        name: event.name,
+        source: event.source,
+        target: event.target,
+        id: this.id,
+      }),
+    );
   }
 
   protected subscribeEvent(event: SubscribeEvent, port: MessagePortLike): void {
@@ -277,15 +319,21 @@ export class PortChannel<
         if (this.options.onSubscribe) {
           this.options.onSubscribe(name, port, event.source);
         }
-        this.eventBus.emit(new PortEvents.subscribeEvent());
       }
     } else {
       this.addPortSubscription(port, event.name, event.source);
       if (this.options.onSubscribe) {
         this.options.onSubscribe(event.name, port, event.source);
       }
-      this.eventBus.emit(new PortEvents.subscribeEvent());
     }
+    this.eventBus.emit(
+      new PortEvents.subscribeEvent({
+        eventName: event.name,
+        port,
+        source: event.source,
+        id: this.id,
+      }),
+    );
   }
 
   protected unsubscribeEvent(
@@ -298,15 +346,21 @@ export class PortChannel<
         if (this.options.onUnsubscribe) {
           this.options.onUnsubscribe(name, port, event.source);
         }
-        this.eventBus.emit(new PortEvents.unsubscribeEvent());
       }
     } else {
       this.removePortSubscription(port, event.name, event.source);
       if (this.options.onUnsubscribe) {
         this.options.onUnsubscribe(event.name, port, event.source);
       }
-      this.eventBus.emit(new PortEvents.unsubscribeEvent());
     }
+    this.eventBus.emit(
+      new PortEvents.unsubscribeEvent({
+        eventName: event.name,
+        port,
+        source: event.source,
+        id: this.id,
+      }),
+    );
   }
 
   protected aliveEvent(event: AliveEvent, port: MessagePortLike): void {
@@ -320,7 +374,15 @@ export class PortChannel<
     }, aliveInterval);
     this.aliveTimeout.set(port, aliveTimeoutId);
 
-    this.eventBus.emit(new PortEvents.aliveEvent());
+    this.eventBus.emit(
+      new PortEvents.aliveEvent({
+        source: event.source,
+        id: this.id,
+        port,
+        aliveInterval,
+        aliveTimeoutId,
+      }),
+    );
   }
 
   protected startEvent(event: StartEvent, port: MessagePortLike): void {
@@ -350,10 +412,18 @@ export class PortChannel<
       source: event.source,
     };
     this.aliveEvent(aliveEvent, port);
+
+    this.eventBus.emit(
+      new PortEvents.startEvent({ source: event.source, id: this.id }),
+    );
   }
 
   protected closeEvent(event: CloseEvent, port: MessagePortLike): void {
     this.removePort(port, event.source);
+
+    this.eventBus.emit(
+      new PortEvents.closeEvent({ source: event.source, id: this.id }),
+    );
   }
 
   protected onMessage(event: ChannelEvent, port: MessagePortLike): void {
