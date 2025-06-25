@@ -1,4 +1,4 @@
-import type { AliveEvent, Serializer } from "../types.ts";
+import type { Serializer } from "../types.ts";
 import {
   type Channel,
   type ChannelEvent,
@@ -21,7 +21,6 @@ export const PortEventTypes = [
   "connectEvent",
   "disconnectEvent",
   "startEvent",
-  "aliveEvent",
   "disposedEvent",
   "closeEvent",
   "all",
@@ -29,12 +28,12 @@ export const PortEventTypes = [
 
 export const PortEvents: Record<
   (typeof PortEventTypes)[number],
-  Type<Event<MessagePortLike>>
+  Type<Event<any>>
 > = PortEventTypes.reduce((acc, event) => {
-  acc[event] = class extends Event<MessagePortLike> {};
+  acc[event] = class extends Event {};
   Object.defineProperty(acc[event], "name", { value: event });
   return acc;
-}, {} as Record<(typeof PortEventTypes)[number], Type<Event<MessagePortLike>>>);
+}, {} as Record<(typeof PortEventTypes)[number], Type<Event<any>>>);
 
 export type PortChannelOptions<
   TContext extends Record<string, any> = Record<string, any>,
@@ -53,8 +52,6 @@ export type PortChannelOptions<
   serializer?: Serializer<any>;
   /** Maximum time (in ms) to buffer events before they are discarded */
   bufferTimeout?: number;
-  /** Interval (in ms) to send alive events */
-  aliveInterval?: number;
   /** the ID used to identify this end of the connection */
   id?: string;
   context?: TContext;
@@ -87,8 +84,6 @@ export class PortChannel<
   public portIds: Map<MessagePortLike, Map<string, number>> = new Map();
   public sourceSubscriptions: Map<string, Set<string>> = new Map();
   protected roundRobinIndices: Map<string, number> = new Map();
-  protected aliveTimeout: WeakMap<MessagePortLike, number> = new WeakMap();
-  protected aliveIntervalId: number | null = null;
 
   // buffering
   protected bufferedEvents: Map<
@@ -96,13 +91,8 @@ export class PortChannel<
     { event: DataEvent; timeoutId: number }[]
   > = new Map();
   protected bufferTimeout: number;
-  protected aliveInterval: number;
 
   [Symbol.dispose](): void {
-    this.dispose();
-  }
-
-  protected dispose(): void {
     this.abortController.abort();
 
     this.ports.forEach((port) => {
@@ -114,13 +104,6 @@ export class PortChannel<
       );
       this.removePort(port, this.id);
     });
-
-    if (this.aliveIntervalId !== null) {
-      clearInterval(this.aliveIntervalId);
-      this.aliveIntervalId = null;
-    }
-
-    this.eventBus.emit(new PortEvents.disposedEvent({ id: this.id }));
   }
 
   constructor(
@@ -133,7 +116,6 @@ export class PortChannel<
     }
     // Set the buffer timeout (default to 5000ms)
     this.bufferTimeout = options.bufferTimeout ?? 5000;
-    this.aliveInterval = options.aliveInterval ?? 2500; // default to 2.5 seconds
     this.id = options.id ?? crypto.randomUUID();
 
     this.eventBus.on([
@@ -142,7 +124,6 @@ export class PortChannel<
       PortEvents.unsubscribeEvent,
       PortEvents.startEvent,
       PortEvents.closeEvent,
-      PortEvents.aliveEvent,
       PortEvents.connectEvent,
       PortEvents.disconnectEvent,
       PortEvents.disposedEvent,
@@ -363,59 +344,19 @@ export class PortChannel<
     );
   }
 
-  protected aliveEvent(event: AliveEvent, port: MessagePortLike): void {
-    if (this.aliveTimeout.has(port)) {
-      clearTimeout(this.aliveTimeout.get(port)!);
-    }
-
-    const aliveInterval = this.aliveInterval * 2 + 100;
-    const aliveTimeoutId = setTimeout(() => {
-      this.removePort(port, event.source);
-    }, aliveInterval);
-    this.aliveTimeout.set(port, aliveTimeoutId);
-
-    this.eventBus.emit(
-      new PortEvents.aliveEvent({
-        source: event.source,
-        id: this.id,
-        port,
-        aliveInterval,
-        aliveTimeoutId,
-      }),
-    );
-  }
-
   protected startEvent(event: StartEvent, port: MessagePortLike): void {
-    const names = Array.from(this.listeners.keys());
-
-    if (names.length) {
-      port.postMessage(
-        this.serializer.serialize({
-          name: names,
-          type: "subscribeEvent",
-          source: this.id,
-        } as SubscribeEvent),
-      );
-    }
+    port.postMessage(
+      this.serializer.serialize({
+        name: Array.from(this.listeners.keys()),
+        type: "subscribeEvent",
+        source: this.id,
+      } as SubscribeEvent),
+    );
 
     if (this.options.onStart) {
       this.options.onStart(port, event.source);
     }
     this.eventBus.emit(new PortEvents.startEvent());
-
-    if (this.aliveTimeout.has(port)) {
-      clearTimeout(this.aliveTimeout.get(port)!);
-    }
-
-    const aliveEvent: AliveEvent = {
-      type: "aliveEvent",
-      source: event.source,
-    };
-    this.aliveEvent(aliveEvent, port);
-
-    this.eventBus.emit(
-      new PortEvents.startEvent({ source: event.source, id: this.id }),
-    );
   }
 
   protected closeEvent(event: CloseEvent, port: MessagePortLike): void {
@@ -431,28 +372,22 @@ export class PortChannel<
 
     if (
       data.type in this &&
-      data.source !== this.id &&
       (data.type === "dataEvent" ||
         data.type === "subscribeEvent" ||
         data.type === "unsubscribeEvent" ||
         data.type === "startEvent" ||
-        data.type === "closeEvent" ||
-        data.type === "aliveEvent")
+        data.type === "closeEvent")
     ) {
       this[data.type](data as any, port);
     }
   }
 
-  protected onMessageError(_event: ChannelEvent, port: MessagePortLike): void {
+  protected onMessageError(event: ChannelEvent, port: MessagePortLike): void {
     this.removePort(port);
     for (const [eventName, portSet] of this.portSubscriptions) {
       portSet.delete(port);
       if (portSet.size === 0) {
         this.portSubscriptions.delete(eventName);
-        if (this.aliveTimeout.has(port)) {
-          clearTimeout(this.aliveTimeout.get(port)!);
-          this.aliveTimeout.delete(port);
-        }
       }
     }
     this.ports.delete(port);
@@ -469,18 +404,6 @@ export class PortChannel<
       source: this.id,
     };
     port.postMessage(this.serializer.serialize(startEvent));
-
-    if (this.aliveIntervalId === null) {
-      this.aliveIntervalId = setInterval(() => {
-        const aliveEvent: AliveEvent = {
-          type: "aliveEvent",
-          source: this.id,
-        };
-        this.ports.forEach((p) => {
-          p.postMessage(this.serializer.serialize(aliveEvent));
-        });
-      }, this.aliveInterval);
-    }
 
     if (this.options.onConnect) {
       this.options.onConnect(port, this.id);
@@ -508,16 +431,12 @@ export class PortChannel<
         this.portSubscriptions.delete(eventName);
       }
     }
-    if (this.aliveTimeout.has(port)) {
-      clearTimeout(this.aliveTimeout.get(port)!);
-      this.aliveTimeout.delete(port);
-    }
     this.ports.delete(port);
 
     if (this.options.onDisconnect) {
       this.options.onDisconnect(port, this.id);
     }
-    this.eventBus.emit(new PortEvents.disconnectEvent(port));
+    this.eventBus.emit(new PortEvents.disconnectEvent());
 
     if (source) {
       const set = this.portIds.get(port);
@@ -684,7 +603,7 @@ export class PortChannel<
   ): void {
     this.eventBus.on(
       PortEvents[event],
-      callback as any,
+      callback,
       signal || this.abortController.signal,
     );
   }
@@ -693,6 +612,6 @@ export class PortChannel<
     event: T,
     callback: (ev: InstanceType<(typeof PortEvents)[T]>) => void,
   ): void {
-    this.eventBus.off(PortEvents[event], callback as any);
+    this.eventBus.off(PortEvents[event], callback);
   }
 }

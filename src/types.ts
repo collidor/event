@@ -25,23 +25,13 @@ export type StartEvent = {
   source: string;
 };
 
-export type AliveEvent = {
-  type: "aliveEvent";
-  source: string;
-};
-
 export type CloseEvent = {
   type: "closeEvent";
   source: string;
 };
 
 export type ChannelEvent = MessageEvent<
-  | DataEvent
-  | SubscribeEvent
-  | UnsubscribeEvent
-  | StartEvent
-  | CloseEvent
-  | AliveEvent
+  DataEvent | SubscribeEvent | UnsubscribeEvent | StartEvent | CloseEvent
 >;
 
 export type MessagePortLike = {
@@ -50,20 +40,20 @@ export type MessagePortLike = {
   postMessage: (message: any) => void;
 };
 export type Channel<
-  TContext extends Record<string, any> = Record<string, any>,
+  TContext extends Record<string, any> = Record<string, any>
 > = {
   publish: (
     event: string,
     data: any,
-    options?: { singleConsumer?: boolean; target?: string },
+    options?: { singleConsumer?: boolean; target?: string }
   ) => void;
   subscribe: (
     event: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ) => void;
   unsubscribe: (
     event: string,
-    callback: (data: any, context: TContext) => void,
+    callback: (data: any, context: TContext) => void
   ) => void;
 };
 
