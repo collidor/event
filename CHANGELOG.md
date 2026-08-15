@@ -1,3 +1,10 @@
+## [4.3.4](https://github.com/collidor/event/compare/v4.3.3...v4.3.4) (2026-08-15)
+
+
+### Bug Fixes
+
+* **ci:** add --allow-dirty to jsr publish to ignore uncommitted lockfiles ([586bdc0](https://github.com/collidor/event/commit/586bdc083ca81ff9a079ebf96dfcee26a80c83ca))
+
 ## [1.0.1](https://github.com/collidor/event/compare/v1.0.0...v1.0.1) (2026-08-15)
 
 
