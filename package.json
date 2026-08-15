@@ -1,10 +1,13 @@
 {
     "name": "@collidor/event",
-    "version": "4.1.2",
+    "version": "4.3.3",
+    "publishConfig": {
+        "access": "public"
+    },
     "description": "A small library to create, register and listen to events.",
     "repository": {
         "type": "git",
-        "url": "https://github.com/collidor/event"
+        "url": "git@github.com:collidor/event.git"
     },
     "type": "module",
     "exports": {
@@ -15,10 +18,13 @@
         }
     },
     "scripts": {
-        "test": "deno test",
-        "test:coverage": "deno eval \"await Deno.remove('./cov_profile', { recursive: true })\" && deno test --coverage=cov_profile && deno coverage --html cov_profile",
         "build": "tsup",
-        "dev": "tsup --watch"
+        "dev": "tsup --watch",
+        "test": "deno test",
+        "lint": "oxlint",
+        "test:coverage": "deno test --coverage && deno coverage --lcov --output=./coverage/lcov.info && deno coverage --html",
+        "publish:jsr": "deno run --allow-all ./publishJsr.ts",
+        "sync:jsr": "deno run --allow-read --allow-write ./sync.ts"
     },
     "keywords": [
         "event",
@@ -31,7 +37,8 @@
     "author": "Alykam Burdzaki <alykam@gmail.com> (https://alykam.com)",
     "license": "MIT",
     "devDependencies": {
-        "tsup": "^8.3.6",
-        "typescript": "^5.7.3"
+        "oxlint": "^1.78.0",
+        "tsup": "^8.5.0",
+        "typescript": "^5.9.2"
     }
 }

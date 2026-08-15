@@ -39,7 +39,11 @@ export type PortChannelOptions<
   TContext extends Record<string, any> = Record<string, any>,
 > = {
   onSubscribe?: (name: string, port: MessagePortLike, source: string) => void;
-  onUnsubscribe?: (name: string, port: MessagePortLike, source: string) => void;
+  onUnsubscribe?: (
+    name: string,
+    port: MessagePortLike,
+    source: string,
+  ) => void;
   onConnect?: (port: MessagePortLike, source: string) => void;
   onData?: (
     data: any,
@@ -88,7 +92,7 @@ export class PortChannel<
   // buffering
   protected bufferedEvents: Map<
     string,
-    { event: DataEvent; timeoutId: number }[]
+    { event: DataEvent; timeoutId: any }[]
   > = new Map();
   protected bufferTimeout: number;
 
@@ -191,7 +195,12 @@ export class PortChannel<
     }
 
     this.eventBus.emit(
-      new PortEvents.subscribeEvent({ eventName, port, source, id: this.id }),
+      new PortEvents.subscribeEvent({
+        eventName,
+        port,
+        source,
+        id: this.id,
+      }),
     );
   }
 
@@ -293,7 +302,10 @@ export class PortChannel<
     );
   }
 
-  protected subscribeEvent(event: SubscribeEvent, port: MessagePortLike): void {
+  protected subscribeEvent(
+    event: SubscribeEvent,
+    port: MessagePortLike,
+  ): void {
     if (Array.isArray(event.name)) {
       for (const name of event.name) {
         this.addPortSubscription(port, name, event.source);
@@ -368,7 +380,9 @@ export class PortChannel<
   }
 
   protected onMessage(event: ChannelEvent, port: MessagePortLike): void {
-    const data: ChannelEvent["data"] = this.serializer.deserialize(event.data);
+    const data: ChannelEvent["data"] = this.serializer.deserialize(
+      event.data,
+    );
 
     if (
       data.type in this &&
@@ -382,7 +396,10 @@ export class PortChannel<
     }
   }
 
-  protected onMessageError(event: ChannelEvent, port: MessagePortLike): void {
+  protected onMessageError(
+    _event: ChannelEvent,
+    port: MessagePortLike,
+  ): void {
     this.removePort(port);
     for (const [eventName, portSet] of this.portSubscriptions) {
       portSet.delete(port);
@@ -574,7 +591,9 @@ export class PortChannel<
       if (sourceSubscribers) {
         const subscriberArray = Array.from(sourceSubscribers).flatMap(
           (source): Array<[MessagePortLike, string]> => {
-            return Array.from(this.idPorts.get(source)?.keys() ?? []).map((
+            return Array.from(
+              this.idPorts.get(source)?.keys() ?? [],
+            ).map((
               port,
             ) => [
               port,
@@ -586,7 +605,10 @@ export class PortChannel<
         const index = this.roundRobinIndices.get(name) || 0;
         const [selectedPort, selectedSource] =
           subscriberArray[index % subscriberArray.length]!;
-        this.roundRobinIndices.set(name, (index + 1) % subscriberArray.length);
+        this.roundRobinIndices.set(
+          name,
+          (index + 1) % subscriberArray.length,
+        );
         dataEvent.target = selectedSource;
 
         selectedPort.postMessage(this.serializer.serialize(dataEvent));
