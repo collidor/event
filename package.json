@@ -1,44 +1,49 @@
 {
-    "name": "@collidor/event",
-    "version": "4.3.3",
-    "publishConfig": {
-        "access": "public"
-    },
-    "description": "A small library to create, register and listen to events.",
-    "repository": {
-        "type": "git",
-        "url": "git@github.com:collidor/event.git"
-    },
-    "type": "module",
-    "exports": {
-        ".": {
-            "types": "./dist/main.d.ts",
-            "import": "./dist/main.js",
-            "require": "./dist/main.cjs"
-        }
-    },
-    "scripts": {
-        "build": "tsup",
-        "dev": "tsup --watch",
-        "test": "deno test",
-        "lint": "oxlint",
-        "test:coverage": "deno test --coverage && deno coverage --lcov --output=./coverage/lcov.info && deno coverage --html",
-        "publish:jsr": "deno run --allow-all ./publishJsr.ts",
-        "sync:jsr": "deno run --allow-read --allow-write ./sync.ts"
-    },
-    "keywords": [
-        "event",
-        "event bus",
-        "event handler",
-        "event emitter",
-        "event listener",
-        "event publisher"
-    ],
-    "author": "Alykam Burdzaki <alykam@gmail.com> (https://alykam.com)",
-    "license": "MIT",
-    "devDependencies": {
-        "oxlint": "^1.78.0",
-        "tsup": "^8.5.0",
-        "typescript": "^5.9.2"
-    }
+    "name":  "@collidor/event",
+    "version":  "4.3.3",
+    "publishConfig":  {
+                          "access":  "public"
+                      },
+    "description":  "A small library to create, register and listen to events.",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git@github.com:collidor/event.git"
+                   },
+    "type":  "module",
+    "exports":  {
+                    ".":  {
+                              "types":  "./dist/main.d.ts",
+                              "import":  "./dist/main.js",
+                              "require":  "./dist/main.cjs"
+                          }
+                },
+    "scripts":  {
+                    "build":  "tsup",
+                    "dev":  "tsup --watch",
+                    "test":  "deno test",
+                    "lint":  "oxlint",
+                    "test:coverage":  "deno test --coverage \u0026\u0026 deno coverage --lcov --output=./coverage/lcov.info \u0026\u0026 deno coverage --html",
+                    "publish:jsr":  "deno run --allow-all ./publishJsr.ts",
+                    "sync:jsr":  "deno run --allow-read --allow-write ./sync.ts",
+                    "release":  "semantic-release"
+                },
+    "keywords":  [
+                     "event",
+                     "event bus",
+                     "event handler",
+                     "event emitter",
+                     "event listener",
+                     "event publisher"
+                 ],
+    "author":  "Alykam Burdzaki \u003calykam@gmail.com\u003e (https://alykam.com)",
+    "license":  "MIT",
+    "devDependencies":  {
+                            "oxlint":  "^1.78.0",
+                            "tsup":  "^8.5.0",
+                            "typescript":  "^5.9.2",
+                            "semantic-release":  "^24.2.3",
+                            "@semantic-release/changelog":  "^6.0.3",
+                            "@semantic-release/git":  "^10.0.1",
+                            "@semantic-release/exec":  "^6.0.3"
+                        }
 }
