@@ -1,6 +1,6 @@
 {
     "name": "@collidor/event",
-    "version": "4.3.3",
+    "version": "1.0.0",
     "license": "MIT",
     "exports": {
         ".": "./src/main.ts"
