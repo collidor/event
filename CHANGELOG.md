@@ -1,3 +1,10 @@
+## [4.3.6](https://github.com/collidor/event/compare/v4.3.5...v4.3.6) (2026-08-16)
+
+
+### Bug Fixes
+
+* trigger patch release ([5964845](https://github.com/collidor/event/commit/5964845f405ee9ce0c2940adcb9c9eccc0f2b2b5))
+
 ## [4.3.5](https://github.com/collidor/event/compare/v4.3.4...v4.3.5) (2026-08-16)
 
 
