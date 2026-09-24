@@ -1,3 +1,16 @@
+# [4.4.0](https://github.com/collidor/event/compare/v4.3.6...v4.4.0) (2026-09-24)
+
+
+### Bug Fixes
+
+* **port-channel:** implement multi-source port retention, peer liveness, and connection handshake ([739c48b](https://github.com/collidor/event/commit/739c48bbbb748d8186af64af049f807f28c5d649))
+* **types:** resolve TS2304 and TS2349 in DTS build ([e57aaf5](https://github.com/collidor/event/commit/e57aaf53cc8eb6632899f0377875323bf2841c6a))
+
+
+### Features
+
+* **channels:** add WindowCustomEventPort implementation ([43dc468](https://github.com/collidor/event/commit/43dc468cb4b5eec7997986a8e9c95d39d6dd19dd))
+
 ## [4.3.6](https://github.com/collidor/event/compare/v4.3.5...v4.3.6) (2026-08-16)
 
 
