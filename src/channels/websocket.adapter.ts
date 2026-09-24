@@ -64,7 +64,9 @@ export class WebSocketAdapter implements MessagePortLike {
     }
   }
 
-  static createBridge(channel: { addPort: (port: MessagePortLike) => void }) {
+  static createBridge(channel: { addPort: (port: MessagePortLike) => void }): {
+    connect: (ws: WebSocket, options?: WebSocketAdapterOptions) => WebSocketAdapter;
+  } {
     return {
       connect: (ws: WebSocket, options?: WebSocketAdapterOptions) => {
         const adapter = new WebSocketAdapter(ws, options);
