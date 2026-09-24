@@ -568,10 +568,10 @@ export class PortChannel<
     }, interval);
 
     // Unref timer if supported so it doesn't block process exit
-    if (typeof (timer as any).unref === "function") {
+    if (typeof (timer as any)?.unref === "function") {
       (timer as any).unref();
-    } else if (typeof (Deno as any)?.unrefTimer === "function") {
-      (Deno as any).unrefTimer(timer);
+    } else if (typeof (globalThis as any).Deno?.unrefTimer === "function") {
+      (globalThis as any).Deno.unrefTimer(timer);
     }
 
     this.heartbeatIntervalId = timer;
