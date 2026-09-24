@@ -6,6 +6,9 @@ import {
   type DataEvent,
   EventBus,
   type MessagePortLike,
+  type PingEvent,
+  type PongEvent,
+  type StartAckEvent,
   type StartEvent,
   type SubscribeEvent,
   type UnsubscribeEvent,
@@ -18,9 +21,11 @@ export const PortEventTypes = [
   "subscribeEvent",
   "unsubscribeEvent",
   "startEvent",
+  "startAckEvent",
+  "pingEvent",
+  "pongEvent",
   "connectEvent",
   "disconnectEvent",
-  "startEvent",
   "disposedEvent",
   "closeEvent",
   "all",
@@ -34,6 +39,12 @@ export const PortEvents: Record<
   Object.defineProperty(acc[event], "name", { value: event });
   return acc;
 }, {} as Record<(typeof PortEventTypes)[number], Type<Event<any>>>);
+
+export type HeartbeatOptions = {
+  enabled?: boolean;
+  interval?: number;
+  timeout?: number;
+};
 
 export type PortChannelOptions<
   TContext extends Record<string, any> = Record<string, any>,
@@ -56,6 +67,8 @@ export type PortChannelOptions<
   serializer?: Serializer<any>;
   /** Maximum time (in ms) to buffer events before they are discarded */
   bufferTimeout?: number;
+  /** Heartbeat options for detecting dead ports */
+  heartbeat?: HeartbeatOptions;
   /** the ID used to identify this end of the connection */
   id?: string;
   context?: TContext;
@@ -83,6 +96,7 @@ export class PortChannel<
 
   // port stuff
   public portSubscriptions: Map<string, Set<MessagePortLike>> = new Map();
+  public portEventSources: Map<string, Map<MessagePortLike, Set<string>>> = new Map();
   public ports: Set<MessagePortLike> = new Set();
   public idPorts: Map<string, Map<MessagePortLike, number>> = new Map();
   public portIds: Map<MessagePortLike, Map<string, number>> = new Map();
@@ -96,24 +110,43 @@ export class PortChannel<
   > = new Map();
   protected bufferTimeout: number;
 
+  // heartbeat
+  protected heartbeatIntervalId: any = null;
+  public peerLastSeen: Map<string, number> = new Map();
+
   [Symbol.dispose](): void {
     this.abortController.abort();
+    this.clearBufferedEvents();
+    this.stopHeartbeat();
 
     this.ports.forEach((port) => {
-      port.postMessage(
-        this.serializer.serialize({
-          type: "closeEvent",
-          source: this.id,
-        } as CloseEvent),
-      );
-      this.removePort(port, this.id);
+      try {
+        port.postMessage(
+          this.serializer.serialize({
+            type: "closeEvent",
+            source: this.id,
+          } as CloseEvent),
+        );
+      } catch {
+        // ignore errors on close
+      }
+      this.removePort(port);
     });
+  }
+
+  public clearBufferedEvents(): void {
+    for (const [, events] of this.bufferedEvents) {
+      for (const item of events) {
+        clearTimeout(item.timeoutId);
+      }
+    }
+    this.bufferedEvents.clear();
   }
 
   constructor(
     options: PortChannelOptions<TContext> = {},
   ) {
-    this.context = options.context ?? {} as TContext;
+    this.context = options.context ?? ({} as TContext);
     this.options = options;
     if (options.serializer) {
       this.serializer = options.serializer;
@@ -127,6 +160,9 @@ export class PortChannel<
       PortEvents.subscribeEvent,
       PortEvents.unsubscribeEvent,
       PortEvents.startEvent,
+      PortEvents.startAckEvent,
+      PortEvents.pingEvent,
+      PortEvents.pongEvent,
       PortEvents.closeEvent,
       PortEvents.connectEvent,
       PortEvents.disconnectEvent,
@@ -134,6 +170,30 @@ export class PortChannel<
     ], (event: any) => {
       this.eventBus.emit(new PortEvents.all(event));
     }, this.abortController.signal);
+
+    if (this.options.heartbeat?.enabled) {
+      this.startHeartbeat();
+    }
+  }
+
+  public registerPeer(port: MessagePortLike, source: string): void {
+    let portCounts = this.idPorts.get(source);
+    if (!portCounts) {
+      portCounts = new Map<MessagePortLike, number>();
+      this.idPorts.set(source, portCounts);
+    }
+    const currentCount = portCounts.get(port) || 0;
+    portCounts.set(port, currentCount + 1);
+
+    let sourceCounts = this.portIds.get(port);
+    if (!sourceCounts) {
+      sourceCounts = new Map<string, number>();
+      this.portIds.set(port, sourceCounts);
+    }
+    const currentSourceCount = sourceCounts.get(source) || 0;
+    sourceCounts.set(source, currentSourceCount + 1);
+
+    this.peerLastSeen.set(source, Date.now());
   }
 
   protected addPortSubscription(
@@ -148,15 +208,26 @@ export class PortChannel<
         set = new Set<MessagePortLike>();
         this.portSubscriptions.set(eventName, set);
       }
-      // Check if this is the first subscriber
       wasEmpty = set.size === 0;
-
       set.add(port);
     }
 
     {
-      let set = this.sourceSubscriptions.get(eventName);
+      let portMap = this.portEventSources.get(eventName);
+      if (!portMap) {
+        portMap = new Map();
+        this.portEventSources.set(eventName, portMap);
+      }
+      let sourceSet = portMap.get(port);
+      if (!sourceSet) {
+        sourceSet = new Set();
+        portMap.set(port, sourceSet);
+      }
+      sourceSet.add(source);
+    }
 
+    {
+      let set = this.sourceSubscriptions.get(eventName);
       if (!set) {
         set = new Set<string>();
         this.sourceSubscriptions.set(eventName, set);
@@ -164,25 +235,7 @@ export class PortChannel<
       set.add(source);
     }
 
-    {
-      let portCounts = this.idPorts.get(source);
-      if (!portCounts) {
-        portCounts = new Map<MessagePortLike, number>();
-        this.idPorts.set(source, portCounts);
-      }
-      const currentCount = portCounts.get(port) || 0;
-      portCounts.set(port, currentCount + 1);
-    }
-
-    {
-      let sourceCounts = this.portIds.get(port);
-      if (!sourceCounts) {
-        sourceCounts = new Map<string, number>();
-        this.portIds.set(port, sourceCounts);
-      }
-      const currentSourceCount = sourceCounts.get(source) || 0;
-      sourceCounts.set(source, currentSourceCount + 1);
-    }
+    this.registerPeer(port, source);
 
     // If this is the first subscriber, flush buffered events (if any)
     if (wasEmpty && this.bufferedEvents.has(eventName)) {
@@ -209,27 +262,42 @@ export class PortChannel<
     eventName: string,
     source: string,
   ): void {
-    {
-      const set = this.portSubscriptions.get(eventName);
-      if (set) {
-        set.delete(port);
-        if (set.size === 0) {
-          this.portSubscriptions.delete(eventName);
+    // 1. Remove source from portEventSources
+    const portMap = this.portEventSources.get(eventName);
+    if (portMap) {
+      const sourceSet = portMap.get(port);
+      if (sourceSet) {
+        sourceSet.delete(source);
+        if (sourceSet.size === 0) {
+          portMap.delete(port);
+          // Only remove port from portSubscriptions if NO other source on this port needs eventName!
+          const portSet = this.portSubscriptions.get(eventName);
+          if (portSet) {
+            portSet.delete(port);
+            if (portSet.size === 0) {
+              this.portSubscriptions.delete(eventName);
+            }
+          }
         }
+      }
+      if (portMap.size === 0) {
+        this.portEventSources.delete(eventName);
       }
     }
 
+    // 2. Remove source from sourceSubscriptions
     {
       const set = this.sourceSubscriptions.get(eventName);
-
       if (set) {
         set.delete(source);
         if (set.size === 0) {
           this.sourceSubscriptions.delete(eventName);
+          this.roundRobinIndices.delete(eventName);
         }
       }
     }
 
+    // 3. Decrement peer counters
     {
       const portCounts = this.idPorts.get(source);
       if (portCounts) {
@@ -307,17 +375,22 @@ export class PortChannel<
     port: MessagePortLike,
   ): void {
     if (Array.isArray(event.name)) {
+      if (event.name.length === 0) {
+        this.registerPeer(port, event.source);
+      }
       for (const name of event.name) {
         this.addPortSubscription(port, name, event.source);
         if (this.options.onSubscribe) {
           this.options.onSubscribe(name, port, event.source);
         }
       }
-    } else {
+    } else if (event.name) {
       this.addPortSubscription(port, event.name, event.source);
       if (this.options.onSubscribe) {
         this.options.onSubscribe(event.name, port, event.source);
       }
+    } else {
+      this.registerPeer(port, event.source);
     }
     this.eventBus.emit(
       new PortEvents.subscribeEvent({
@@ -340,7 +413,7 @@ export class PortChannel<
           this.options.onUnsubscribe(name, port, event.source);
         }
       }
-    } else {
+    } else if (event.name) {
       this.removePortSubscription(port, event.name, event.source);
       if (this.options.onUnsubscribe) {
         this.options.onUnsubscribe(event.name, port, event.source);
@@ -357,6 +430,15 @@ export class PortChannel<
   }
 
   protected startEvent(event: StartEvent, port: MessagePortLike): void {
+    this.registerPeer(port, event.source);
+
+    // Register any listeners announced by the incoming peer
+    if (event.listeners && event.listeners.length > 0) {
+      for (const name of event.listeners) {
+        this.addPortSubscription(port, name, event.source);
+      }
+    }
+
     port.postMessage(
       this.serializer.serialize({
         name: Array.from(this.listeners.keys()),
@@ -369,6 +451,39 @@ export class PortChannel<
       this.options.onStart(port, event.source);
     }
     this.eventBus.emit(new PortEvents.startEvent());
+  }
+
+  protected startAckEvent(event: StartAckEvent, port: MessagePortLike): void {
+    this.registerPeer(port, event.source);
+
+    if (event.listeners && event.listeners.length > 0) {
+      for (const name of event.listeners) {
+        this.addPortSubscription(port, name, event.source);
+      }
+    }
+    this.eventBus.emit(new PortEvents.startAckEvent());
+  }
+
+  protected pingEvent(event: PingEvent, port: MessagePortLike): void {
+    if (event.target && event.target !== this.id) {
+      return;
+    }
+    this.peerLastSeen.set(event.source, Date.now());
+    const pong: PongEvent = {
+      type: "pongEvent",
+      source: this.id,
+      target: event.source,
+    };
+    port.postMessage(this.serializer.serialize(pong));
+    this.eventBus.emit(new PortEvents.pingEvent());
+  }
+
+  protected pongEvent(event: PongEvent, _port: MessagePortLike): void {
+    if (event.target && event.target !== this.id) {
+      return;
+    }
+    this.peerLastSeen.set(event.source, Date.now());
+    this.eventBus.emit(new PortEvents.pongEvent());
   }
 
   protected closeEvent(event: CloseEvent, port: MessagePortLike): void {
@@ -384,15 +499,28 @@ export class PortChannel<
       event.data,
     );
 
+    if (!data || typeof data !== "object") return;
+
+    if (data.source === this.id) {
+      return;
+    }
+
+    if (data.source) {
+      this.peerLastSeen.set(data.source, Date.now());
+    }
+
     if (
       data.type in this &&
       (data.type === "dataEvent" ||
         data.type === "subscribeEvent" ||
         data.type === "unsubscribeEvent" ||
         data.type === "startEvent" ||
+        data.type === "startAckEvent" ||
+        data.type === "pingEvent" ||
+        data.type === "pongEvent" ||
         data.type === "closeEvent")
     ) {
-      this[data.type](data as any, port);
+      (this as any)[data.type](data, port);
     }
   }
 
@@ -401,13 +529,59 @@ export class PortChannel<
     port: MessagePortLike,
   ): void {
     this.removePort(port);
-    for (const [eventName, portSet] of this.portSubscriptions) {
-      portSet.delete(port);
-      if (portSet.size === 0) {
-        this.portSubscriptions.delete(eventName);
+  }
+
+  public startHeartbeat(): void {
+    if (!this.options.heartbeat?.enabled) return;
+    const interval = this.options.heartbeat.interval ?? 5000;
+    const timeout = this.options.heartbeat.timeout ?? 15000;
+
+    if (this.heartbeatIntervalId !== null) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      // Check timeouts for all known peers
+      for (const [source, lastSeen] of this.peerLastSeen) {
+        if (now - lastSeen > timeout) {
+          const portMap = this.idPorts.get(source);
+          if (portMap) {
+            for (const port of Array.from(portMap.keys())) {
+              this.removePort(port, source);
+            }
+          }
+        }
       }
+
+      // Send ping to all connected ports
+      const ping: PingEvent = {
+        type: "pingEvent",
+        source: this.id,
+      };
+      const serialized = this.serializer.serialize(ping);
+      for (const port of this.ports) {
+        try {
+          port.postMessage(serialized);
+        } catch {
+          // ignore
+        }
+      }
+    }, interval);
+
+    // Unref timer if supported so it doesn't block process exit
+    if (typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    } else if (typeof (Deno as any)?.unrefTimer === "function") {
+      (Deno as any).unrefTimer(timer);
     }
-    this.ports.delete(port);
+
+    this.heartbeatIntervalId = timer;
+  }
+
+  public stopHeartbeat(): void {
+    if (this.heartbeatIntervalId !== null) {
+      clearInterval(this.heartbeatIntervalId);
+      this.heartbeatIntervalId = null;
+    }
   }
 
   public addPort(port: MessagePortLike): () => void {
@@ -419,8 +593,13 @@ export class PortChannel<
     const startEvent: StartEvent = {
       type: "startEvent",
       source: this.id,
+      listeners: Array.from(this.listeners.keys()),
     };
     port.postMessage(this.serializer.serialize(startEvent));
+
+    if (this.options.heartbeat?.enabled && this.heartbeatIntervalId === null) {
+      this.startHeartbeat();
+    }
 
     if (this.options.onConnect) {
       this.options.onConnect(port, this.id);
@@ -432,48 +611,107 @@ export class PortChannel<
         type: "closeEvent",
         source: this.id,
       };
-      port.postMessage(this.serializer.serialize(closeEvent));
-      this.ports.delete(port);
-
-      if (this.options.onDisconnect) {
-        this.options.onDisconnect(port, this.id);
+      try {
+        port.postMessage(this.serializer.serialize(closeEvent));
+      } catch {
+        // ignore
       }
+      this.removePort(port);
     };
   }
 
   public removePort(port: MessagePortLike, source?: string): void {
+    if (source) {
+      // 1. Remove from all sourceSubscriptions
+      for (const [eventName, srcSet] of this.sourceSubscriptions) {
+        srcSet.delete(source);
+        if (srcSet.size === 0) {
+          this.sourceSubscriptions.delete(eventName);
+        }
+      }
+
+      // 2. Remove from portEventSources and conditionally from portSubscriptions
+      for (const [eventName, portMap] of this.portEventSources) {
+        const sourceSet = portMap.get(port);
+        if (sourceSet) {
+          sourceSet.delete(source);
+          if (sourceSet.size === 0) {
+            portMap.delete(port);
+            const portSet = this.portSubscriptions.get(eventName);
+            if (portSet) {
+              portSet.delete(port);
+              if (portSet.size === 0) {
+                this.portSubscriptions.delete(eventName);
+              }
+            }
+          }
+        }
+        if (portMap.size === 0) {
+          this.portEventSources.delete(eventName);
+        }
+      }
+
+      // 3. Clear from idPorts and peer tracking
+      this.idPorts.delete(source);
+      this.peerLastSeen.delete(source);
+
+      // 4. Remove source from portIds
+      const sourceMap = this.portIds.get(port);
+      if (sourceMap) {
+        sourceMap.delete(source);
+      }
+
+      // 5. Check if ANY other sources are still alive on this port!
+      const remainingSourcesCount = sourceMap ? sourceMap.size : 0;
+      if (remainingSourcesCount > 0) {
+        // Other peers still share this port (e.g. BroadcastChannel, WindowCustomEventPort)!
+        // DO NOT delete the physical port!
+        return;
+      }
+    }
+
+    // If source is NOT provided, or if zero sources remain on this port:
+    // Fully clean up the physical port!
     for (const [eventName, portSet] of this.portSubscriptions) {
       portSet.delete(port);
       if (portSet.size === 0) {
         this.portSubscriptions.delete(eventName);
       }
     }
+
+    for (const [eventName, portMap] of this.portEventSources) {
+      portMap.delete(port);
+      if (portMap.size === 0) {
+        this.portEventSources.delete(eventName);
+      }
+    }
+
+    const associatedSources = this.portIds.get(port);
+    if (associatedSources) {
+      for (const src of associatedSources.keys()) {
+        const pMap = this.idPorts.get(src);
+        if (pMap) {
+          pMap.delete(port);
+          if (pMap.size === 0) {
+            this.idPorts.delete(src);
+            for (const [eventName, srcSet] of this.sourceSubscriptions) {
+              srcSet.delete(src);
+              if (srcSet.size === 0) {
+                this.sourceSubscriptions.delete(eventName);
+              }
+            }
+          }
+        }
+      }
+      this.portIds.delete(port);
+    }
+
     this.ports.delete(port);
 
     if (this.options.onDisconnect) {
       this.options.onDisconnect(port, this.id);
     }
     this.eventBus.emit(new PortEvents.disconnectEvent());
-
-    if (source) {
-      const set = this.portIds.get(port);
-      if (set) {
-        set.delete(source);
-        {
-          const set = this.idPorts.get(source);
-
-          if (set) {
-            set.delete(port);
-            if (!set.size) {
-              this.idPorts.delete(source);
-            }
-          }
-        }
-        if (set.size === 0) {
-          this.portIds.delete(port);
-        }
-      }
-    }
   }
 
   public subscribe(
@@ -584,38 +822,35 @@ export class PortChannel<
         return;
       }
 
-      // round robbin to get the next port for the event
-
+      // round robin to get the next port for the event
       const sourceSubscribers = this.sourceSubscriptions.get(name);
 
-      if (sourceSubscribers) {
+      if (sourceSubscribers && sourceSubscribers.size > 0) {
         const subscriberArray = Array.from(sourceSubscribers).flatMap(
           (source): Array<[MessagePortLike, string]> => {
             return Array.from(
               this.idPorts.get(source)?.keys() ?? [],
-            ).map((
-              port,
-            ) => [
-              port,
-              source,
-            ]);
+            ).map((port) => [port, source]);
           },
         );
 
-        const index = this.roundRobinIndices.get(name) || 0;
-        const [selectedPort, selectedSource] =
-          subscriberArray[index % subscriberArray.length]!;
-        this.roundRobinIndices.set(
-          name,
-          (index + 1) % subscriberArray.length,
-        );
-        dataEvent.target = selectedSource;
+        if (subscriberArray.length > 0) {
+          const index = this.roundRobinIndices.get(name) || 0;
+          const [selectedPort, selectedSource] =
+            subscriberArray[index % subscriberArray.length]!;
+          this.roundRobinIndices.set(
+            name,
+            (index + 1) % subscriberArray.length,
+          );
+          dataEvent.target = selectedSource;
 
-        selectedPort.postMessage(this.serializer.serialize(dataEvent));
+          selectedPort.postMessage(this.serializer.serialize(dataEvent));
+          return;
+        }
       }
-    } else {
-      this.bufferEvent(name, dataEvent);
     }
+
+    this.bufferEvent(name, dataEvent);
   }
 
   public on<T extends (typeof PortEventTypes)[number]>(

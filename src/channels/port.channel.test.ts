@@ -797,3 +797,114 @@ Deno.test("PortChannel - should accept custom serializer", async () => {
   assertEquals(eventSpy.calls[0]?.args?.[0], "Hello there");
   assertEquals(receivedData?.byteLength, 108);
 });
+
+Deno.test("PortChannel - does not delete shared port when only one source disconnects", () => {
+  const channel = new PortChannel({});
+  const port = new FakeMessagePort();
+  channel.addPort(port);
+
+  // Two different sources subscribe on the same port
+  channel["subscribeEvent"]({
+    type: "subscribeEvent",
+    name: "SharedEvent",
+    source: "source-1",
+  }, port);
+
+  channel["subscribeEvent"]({
+    type: "subscribeEvent",
+    name: "SharedEvent",
+    source: "source-2",
+  }, port);
+
+  assertEquals(channel.ports.has(port), true);
+  assertEquals(channel.idPorts.has("source-1"), true);
+  assertEquals(channel.idPorts.has("source-2"), true);
+
+  // Source-1 closes
+  channel.removePort(port, "source-1");
+
+  // Port must STILL be in channel.ports because source-2 is alive!
+  assertEquals(channel.ports.has(port), true);
+  assertEquals(channel.idPorts.has("source-1"), false);
+  assertEquals(channel.idPorts.has("source-2"), true);
+  assertEquals(channel.portSubscriptions.get("SharedEvent")?.has(port), true);
+
+  // Source-2 closes
+  channel.removePort(port, "source-2");
+
+  // Now the physical port has no sources left and is removed
+  assertEquals(channel.ports.has(port), false);
+  assertEquals(channel.idPorts.has("source-2"), false);
+  assertEquals(channel.portSubscriptions.has("SharedEvent"), false);
+});
+
+Deno.test("PortChannel - does not remove event subscription for co-located peers on unsubscription", () => {
+  const channel = new PortChannel({});
+  const port = new FakeMessagePort();
+  channel.addPort(port);
+
+  channel["subscribeEvent"]({
+    type: "subscribeEvent",
+    name: "CommonEvent",
+    source: "peer-A",
+  }, port);
+
+  channel["subscribeEvent"]({
+    type: "subscribeEvent",
+    name: "CommonEvent",
+    source: "peer-B",
+  }, port);
+
+  assertEquals(channel.portSubscriptions.get("CommonEvent")?.has(port), true);
+
+  // Peer-A unsubscribes from CommonEvent
+  channel["unsubscribeEvent"]({
+    type: "unsubscribeEvent",
+    name: "CommonEvent",
+    source: "peer-A",
+  }, port);
+
+  // Port must STILL be subscribed to CommonEvent because peer-B is still subscribed!
+  assertEquals(channel.portSubscriptions.get("CommonEvent")?.has(port), true);
+  assertEquals(channel.sourceSubscriptions.get("CommonEvent")?.has("peer-B"), true);
+  assertEquals(channel.sourceSubscriptions.get("CommonEvent")?.has("peer-A"), false);
+
+  // Peer-B unsubscribes
+  channel["unsubscribeEvent"]({
+    type: "unsubscribeEvent",
+    name: "CommonEvent",
+    source: "peer-B",
+  }, port);
+
+  assertEquals(channel.portSubscriptions.has("CommonEvent"), false);
+  assertEquals(channel.sourceSubscriptions.has("CommonEvent"), false);
+});
+
+Deno.test("PortChannel - clearBufferedEvents removes all timeouts on disposal", () => {
+  const channel = new PortChannel({ bufferTimeout: 10000 });
+  channel.publish("UnsubEvent", "data1");
+  channel.publish("UnsubEvent", "data2");
+
+  assertEquals(channel["bufferedEvents"].has("UnsubEvent"), true);
+  assertEquals(channel["bufferedEvents"].get("UnsubEvent")?.length, 2);
+
+  // Disposing channel clears buffered events and their timers immediately
+  channel[Symbol.dispose]();
+
+  assertEquals(channel["bufferedEvents"].size, 0);
+});
+
+Deno.test("PortChannel - registers peer even when incoming subscribeEvent has empty listeners", () => {
+  const channel = new PortChannel({});
+  const port = new FakeMessagePort();
+  channel.addPort(port);
+
+  channel["subscribeEvent"]({
+    type: "subscribeEvent",
+    name: [],
+    source: "empty-source",
+  }, port);
+
+  assertEquals(channel.idPorts.has("empty-source"), true);
+});
+

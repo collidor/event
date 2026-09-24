@@ -23,6 +23,25 @@ export type UnsubscribeEvent = {
 export type StartEvent = {
   type: "startEvent";
   source: string;
+  listeners?: string[];
+};
+
+export type StartAckEvent = {
+  type: "startAckEvent";
+  source: string;
+  listeners?: string[];
+};
+
+export type PingEvent = {
+  type: "pingEvent";
+  source: string;
+  target?: string;
+};
+
+export type PongEvent = {
+  type: "pongEvent";
+  source: string;
+  target?: string;
 };
 
 export type CloseEvent = {
@@ -31,7 +50,14 @@ export type CloseEvent = {
 };
 
 export type ChannelEvent = MessageEvent<
-  DataEvent | SubscribeEvent | UnsubscribeEvent | StartEvent | CloseEvent
+  | DataEvent
+  | SubscribeEvent
+  | UnsubscribeEvent
+  | StartEvent
+  | StartAckEvent
+  | PingEvent
+  | PongEvent
+  | CloseEvent
 >;
 
 export type MessagePortLike = {
