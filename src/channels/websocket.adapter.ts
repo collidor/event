@@ -27,7 +27,7 @@ export class WebSocketAdapter implements MessagePortLike {
           : JSON.parse(event.data);
 
         this.onmessage?.({ data } as MessageEvent);
-      } catch (_error) {
+      } catch {
         this.onmessageerror?.({ data: event.data } as MessageEvent);
       }
     };

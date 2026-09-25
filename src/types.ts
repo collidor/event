@@ -110,10 +110,6 @@ export type Clonable =
   | boolean
   | null
   | number
-  // deno-lint-ignore ban-types
-  | Number
-  // deno-lint-ignore ban-types
-  | String
   | TypedArray;
 
 export type Serializer<S extends Clonable> = {
