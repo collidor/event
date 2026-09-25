@@ -436,6 +436,9 @@ export class PortChannel<
     if (event.listeners && event.listeners.length > 0) {
       for (const name of event.listeners) {
         this.addPortSubscription(port, name, event.source);
+        if (this.options.onSubscribe) {
+          this.options.onSubscribe(name, port, event.source);
+        }
       }
     }
 
@@ -459,6 +462,9 @@ export class PortChannel<
     if (event.listeners && event.listeners.length > 0) {
       for (const name of event.listeners) {
         this.addPortSubscription(port, name, event.source);
+        if (this.options.onSubscribe) {
+          this.options.onSubscribe(name, port, event.source);
+        }
       }
     }
     this.eventBus.emit(new PortEvents.startAckEvent());
@@ -624,9 +630,14 @@ export class PortChannel<
     if (source) {
       // 1. Remove from all sourceSubscriptions
       for (const [eventName, srcSet] of this.sourceSubscriptions) {
-        srcSet.delete(source);
-        if (srcSet.size === 0) {
-          this.sourceSubscriptions.delete(eventName);
+        if (srcSet.has(source)) {
+          srcSet.delete(source);
+          if (this.options.onUnsubscribe) {
+            this.options.onUnsubscribe(eventName, port, source);
+          }
+          if (srcSet.size === 0) {
+            this.sourceSubscriptions.delete(eventName);
+          }
         }
       }
 
@@ -695,9 +706,14 @@ export class PortChannel<
           if (pMap.size === 0) {
             this.idPorts.delete(src);
             for (const [eventName, srcSet] of this.sourceSubscriptions) {
-              srcSet.delete(src);
-              if (srcSet.size === 0) {
-                this.sourceSubscriptions.delete(eventName);
+              if (srcSet.has(src)) {
+                srcSet.delete(src);
+                if (this.options.onUnsubscribe) {
+                  this.options.onUnsubscribe(eventName, port, src);
+                }
+                if (srcSet.size === 0) {
+                  this.sourceSubscriptions.delete(eventName);
+                }
               }
             }
           }
@@ -739,17 +755,21 @@ export class PortChannel<
 
   public unsubscribe(
     name: string,
-    callback: (data: any, context: TContext) => void,
+    callback?: (data: any, context: TContext) => void,
   ): void {
     if (!this.listeners.has(name)) return;
-    const callbacks = this.listeners.get(name);
-    if (callbacks) {
-      this.listeners.set(
-        name,
-        callbacks.filter((cb) => cb !== callback),
-      );
+    if (callback) {
+      const callbacks = this.listeners.get(name);
+      if (callbacks) {
+        this.listeners.set(
+          name,
+          callbacks.filter((cb) => cb !== callback),
+        );
+      }
+    } else {
+      this.listeners.delete(name);
     }
-    if (this.listeners.get(name)!.length === 0) {
+    if (!this.listeners.has(name) || this.listeners.get(name)!.length === 0) {
       this.listeners.delete(name);
       for (const port of this.ports) {
         port.postMessage(

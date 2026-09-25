@@ -79,7 +79,7 @@ export type Channel<
   ) => void;
   unsubscribe: (
     event: string,
-    callback: (data: any, context: TContext) => void
+    callback?: (data: any, context: TContext) => void
   ) => void;
 };
 
