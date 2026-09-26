@@ -1,3 +1,10 @@
+# [4.5.0](https://github.com/collidor/event/compare/v4.4.0...v4.5.0) (2026-09-26)
+
+
+### Features
+
+* **port-channel:** trigger onSubscribe and onUnsubscribe on peer connect and disconnect; support optional callback in unsubscribe ([0e88f83](https://github.com/collidor/event/commit/0e88f8323c3416905f2a1053d1d15501f975a7ac))
+
 # [4.4.0](https://github.com/collidor/event/compare/v4.3.6...v4.4.0) (2026-09-24)
 
 
