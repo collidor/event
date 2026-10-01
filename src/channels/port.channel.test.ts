@@ -106,14 +106,16 @@ Deno.test(
       currentTarget: fakePort,
     });
 
-    assertEquals(fakePort.messages.length, 4);
+    assertEquals(fakePort.messages.length, 5);
     assertEquals(fakePort.messages[0].type, "startEvent");
     assertEquals(fakePort.messages[1].type, "subscribeEvent");
     assertEquals(fakePort.messages[1].name, "TestEvent");
     assertEquals(fakePort.messages[2].type, "subscribeEvent");
     assertEquals(fakePort.messages[2].name, "TestEvent2");
-    assertEquals(fakePort.messages[3].type, "subscribeEvent");
-    assertEquals(fakePort.messages[3].name, ["TestEvent", "TestEvent2"]);
+    assertEquals(fakePort.messages[3].type, "startAckEvent");
+    assertEquals(fakePort.messages[3].listeners, ["TestEvent", "TestEvent2"]);
+    assertEquals(fakePort.messages[4].type, "subscribeEvent");
+    assertEquals(fakePort.messages[4].name, ["TestEvent", "TestEvent2"]);
   },
 );
 
@@ -907,4 +909,145 @@ Deno.test("PortChannel - registers peer even when incoming subscribeEvent has em
 
   assertEquals(channel.idPorts.has("empty-source"), true);
 });
+
+Deno.test("PortChannel - availability tracking and onAvailabilityChange", () => {
+  const channel = new PortChannel({});
+  const port = new FakeMessagePort();
+  channel.addPort(port);
+
+  const changes: { name: string; isAvailable: boolean }[] = [];
+  const off = channel.onAvailabilityChange((name, isAvailable) => {
+    changes.push({ name, isAvailable });
+  });
+
+  assertEquals(channel.isAvailable("TopicA"), false);
+
+  // Peer announces TopicA
+  channel["addPortSubscription"](port, "TopicA", "peer1");
+  assertEquals(channel.isAvailable("TopicA"), true);
+  assertEquals(channel.getAvailableCommands(), ["TopicA"]);
+  assertEquals(changes.length, 1);
+  assertEquals(changes[0], { name: "TopicA", isAvailable: true });
+
+  // Co-located second peer also announces TopicA -> should not fire second true
+  channel["addPortSubscription"](port, "TopicA", "peer2");
+  assertEquals(changes.length, 1);
+
+  // peer1 unsubscribes -> TopicA still available via peer2
+  channel["removePortSubscription"](port, "TopicA", "peer1");
+  assertEquals(channel.isAvailable("TopicA"), true);
+  assertEquals(changes.length, 1);
+
+  // peer2 unsubscribes -> TopicA now unavailable
+  channel["removePortSubscription"](port, "TopicA", "peer2");
+  assertEquals(channel.isAvailable("TopicA"), false);
+  assertEquals(changes.length, 2);
+  assertEquals(changes[1], { name: "TopicA", isAvailable: false });
+
+  off();
+});
+
+Deno.test("PortChannel - bidirectional handshake with startAckEvent", () => {
+  const channelA = new PortChannel({});
+  const channelB = new PortChannel({});
+
+  channelA.subscribe("TopicA", () => {});
+  channelB.subscribe("TopicB", () => {});
+
+  const portA = new FakeMessagePort("portA");
+  const portB = new FakeMessagePort("portB");
+
+  // Pair them
+  portA.postMessage = (msg) => {
+    const parsed = typeof msg === "string" ? JSON.parse(msg) : msg;
+    portB.onmessage?.({ data: JSON.stringify(parsed), currentTarget: portB });
+  };
+  portB.postMessage = (msg) => {
+    const parsed = typeof msg === "string" ? JSON.parse(msg) : msg;
+    portA.onmessage?.({ data: JSON.stringify(parsed), currentTarget: portA });
+  };
+
+  channelA.addPort(portA);
+  channelB.addPort(portB);
+
+  // Channel A should now know TopicB from Channel B
+  assertEquals(channelA.isAvailable("TopicB"), true);
+  // Channel B should now know TopicA from Channel A
+  assertEquals(channelB.isAvailable("TopicA"), true);
+});
+
+Deno.test("PortChannel - sendRequestWithFailover executes request and receives response", async () => {
+  const serverChannel = new PortChannel({ id: "server" });
+  const clientChannel = new PortChannel({ id: "client" });
+
+  const portServer = new FakeMessagePort("portServer");
+  const portClient = new FakeMessagePort("portClient");
+
+  portServer.postMessage = (msg) => {
+    const parsed = typeof msg === "string" ? JSON.parse(msg) : msg;
+    portClient.onmessage?.({ data: JSON.stringify(parsed), currentTarget: portClient });
+  };
+  portClient.postMessage = (msg) => {
+    const parsed = typeof msg === "string" ? JSON.parse(msg) : msg;
+    portServer.onmessage?.({ data: JSON.stringify(parsed), currentTarget: portServer });
+  };
+
+  serverChannel.addPort(portServer);
+  clientChannel.addPort(portClient);
+
+  // Server registers handler for "Compute"
+  serverChannel.subscribe("Compute", (dataEvent: any) => {
+    const ackName = serverChannel.getAckName("Compute");
+    const responseName = serverChannel.getResponseName("Compute");
+
+    // 1. Send ACK
+    serverChannel.publish(ackName, { id: dataEvent.id }, { singleConsumer: true, target: dataEvent.source });
+
+    // 2. Send Response
+    serverChannel.publish(responseName, { id: dataEvent.id, data: dataEvent.data * 2, done: true }, {
+      singleConsumer: true,
+      target: dataEvent.source,
+    });
+  });
+
+  const result = await clientChannel.sendRequestWithFailover("Compute", 21);
+  assertEquals(result, 42);
+});
+
+Deno.test("PortChannel - sendRequestWithFailover fails over to next candidate when first fails to ACK", async () => {
+  const clientChannel = new PortChannel({ id: "client", ackTimeout: 50 });
+  const portClient = new FakeMessagePort("portClient");
+  clientChannel.addPort(portClient);
+
+  // Register two candidates for "FailingCompute"
+  clientChannel["addPortSubscription"](portClient, "FailingCompute", "deadWorker");
+  clientChannel["addPortSubscription"](portClient, "FailingCompute", "liveWorker");
+
+  portClient.postMessage = (msg) => {
+    const parsed = typeof msg === "string" ? JSON.parse(msg) : msg;
+    if (parsed.type === "dataEvent" && parsed.name === "FailingCompute") {
+      if (parsed.target === "liveWorker") {
+        // liveWorker replies with ACK and response
+        const ackName = clientChannel.getAckName("FailingCompute");
+        const responseName = clientChannel.getResponseName("FailingCompute");
+        clientChannel["onMessage"]({
+          data: JSON.stringify({ type: "dataEvent", name: ackName, data: { id: parsed.data.id }, source: "liveWorker" }),
+        } as any, portClient);
+        clientChannel["onMessage"]({
+          data: JSON.stringify({
+            type: "dataEvent",
+            name: responseName,
+            data: { id: parsed.data.id, data: 999, done: true },
+            source: "liveWorker",
+          }),
+        } as any, portClient);
+      }
+      // deadWorker does nothing -> drops message
+    }
+  };
+
+  const result = await clientChannel.sendRequestWithFailover("FailingCompute", 100);
+  assertEquals(result, 999);
+});
+
 

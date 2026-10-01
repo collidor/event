@@ -67,6 +67,11 @@ export type PortChannelOptions<
   serializer?: Serializer<any>;
   /** Maximum time (in ms) to buffer events before they are discarded */
   bufferTimeout?: number;
+  /** Request / Command timeout in milliseconds (defaults to 5000) */
+  requestTimeout?: number;
+  commandTimeout?: number;
+  /** Acknowledgement timeout in milliseconds (defaults to 500) */
+  ackTimeout?: number;
   /** Heartbeat options for detecting dead ports */
   heartbeat?: HeartbeatOptions;
   /** the ID used to identify this end of the connection */
@@ -102,6 +107,15 @@ export class PortChannel<
   public portIds: Map<MessagePortLike, Map<string, number>> = new Map();
   public sourceSubscriptions: Map<string, Set<string>> = new Map();
   protected roundRobinIndices: Map<string, number> = new Map();
+  public responseSubscriptions: Map<
+    string,
+    Map<string, (data: any, done: boolean, error?: any) => void>
+  > = new Map();
+  public availabilityCallbacks: Set<
+    (name: string, isAvailable: boolean) => void
+  > = new Set();
+  public timeout = 5000;
+  public ackTimeout = 500;
 
   // buffering
   protected bufferedEvents: Map<
@@ -148,6 +162,16 @@ export class PortChannel<
   ) {
     this.context = options.context ?? ({} as TContext);
     this.options = options;
+    if (options.commandTimeout) {
+      this.timeout = options.commandTimeout;
+    } else if (options.requestTimeout) {
+      this.timeout = options.requestTimeout;
+    }
+    if (options.ackTimeout !== undefined) {
+      this.ackTimeout = options.ackTimeout;
+    } else if (options.commandTimeout || options.requestTimeout) {
+      this.ackTimeout = Math.min(500, this.timeout);
+    }
     if (options.serializer) {
       this.serializer = options.serializer;
     }
@@ -176,6 +200,370 @@ export class PortChannel<
     }
   }
 
+  public static getResponseName(name: string): string {
+    return `${name}_Response`;
+  }
+
+  public static getUnsubscribeName(name: string): string {
+    return `${name}_Unsubscribe`;
+  }
+
+  public static getAckName(name: string): string {
+    return `${name}_Ack`;
+  }
+
+  public getResponseName(name: string): string {
+    return PortChannel.getResponseName(name);
+  }
+
+  public getUnsubscribeName(name: string): string {
+    return PortChannel.getUnsubscribeName(name);
+  }
+
+  public getAckName(name: string): string {
+    return PortChannel.getAckName(name);
+  }
+
+  public onAvailabilityChange(
+    callback: (name: string, isAvailable: boolean) => void,
+  ): () => void {
+    this.availabilityCallbacks.add(callback);
+    return () => {
+      this.availabilityCallbacks.delete(callback);
+    };
+  }
+
+  public isAvailable(name: string): boolean {
+    const count = this.sourceSubscriptions.get(name)?.size ?? 0;
+    return count > 0;
+  }
+
+  public getAvailable(filterInternal = true): string[] {
+    const available: string[] = [];
+    for (const [name, sources] of this.sourceSubscriptions) {
+      if (sources.size > 0) {
+        if (
+          filterInternal &&
+          (name.endsWith("_Response") ||
+            name.endsWith("_Ack") ||
+            name.endsWith("_Unsubscribe"))
+        ) {
+          continue;
+        }
+        available.push(name);
+      }
+    }
+    return available;
+  }
+
+  public getAvailableCommands(): string[] {
+    return this.getAvailable(true);
+  }
+
+  public notifyAvailabilityChange(
+    name: string,
+    isAvailable: boolean,
+  ): void {
+    if (
+      name.endsWith("_Response") ||
+      name.endsWith("_Ack") ||
+      name.endsWith("_Unsubscribe")
+    ) {
+      return;
+    }
+    for (const cb of this.availabilityCallbacks) {
+      cb(name, isAvailable);
+    }
+  }
+
+  public removeSubscription(
+    name: string,
+    id: string,
+    callback: (response: any) => void,
+    unsubscribeCallback: (response: any) => void,
+    ackCallback?: (ackEvent: any) => void,
+  ): void {
+    const responseName = this.getResponseName(name);
+    const unsubscribeName = this.getUnsubscribeName(name);
+    const ackName = this.getAckName(name);
+
+    if (ackCallback) {
+      this.unsubscribe(ackName, ackCallback);
+    }
+
+    this.responseSubscriptions.get(responseName)?.delete(id);
+    if (this.responseSubscriptions.get(responseName)?.size === 0) {
+      this.responseSubscriptions.delete(responseName);
+      this.unsubscribe(responseName, callback);
+      this.unsubscribe(unsubscribeName, unsubscribeCallback);
+    }
+  }
+
+  public addSubscription(
+    name: string,
+    id: string,
+    handler: (data: any, done: boolean, error?: any) => void,
+    onAckFail: () => void,
+    target?: string,
+    responseTimeout?: number,
+    ackTimeout?: number,
+  ): () => void {
+    const responseName = this.getResponseName(name);
+    const unsubscribeName = this.getUnsubscribeName(name);
+    const ackName = this.getAckName(name);
+
+    let ackCallback: ((ackEvent: any) => void) | undefined;
+    let ackTimer: any;
+    let responseTimer: any;
+
+    const cleanup = () => {
+      if (ackTimer) {
+        clearTimeout(ackTimer);
+        ackTimer = undefined;
+      }
+      if (responseTimer) {
+        clearTimeout(responseTimer);
+        responseTimer = undefined;
+      }
+      if (ackCallback) {
+        this.unsubscribe(ackName, ackCallback);
+        ackCallback = undefined;
+      }
+      this.removeSubscription(
+        name,
+        id,
+        callback,
+        unsubscribeCallback,
+      );
+    };
+
+    const callback = (response: any) => {
+      const subscribedHandler = this.responseSubscriptions.get(responseName)
+        ?.get(response.id);
+      if (subscribedHandler) {
+        subscribedHandler(response.data, response.done, response.error);
+      }
+      if (response.done || !subscribedHandler) {
+        cleanup();
+      }
+    };
+
+    const unsubscribeCallback = (response: any) => {
+      if (response.id === id) {
+        cleanup();
+      }
+    };
+
+    const effectiveAckTimeout = ackTimeout ?? this.ackTimeout;
+    ackTimer = setTimeout(() => {
+      cleanup();
+      if (
+        this.portSubscriptions.has(unsubscribeName) ||
+        this.sourceSubscriptions.has(unsubscribeName)
+      ) {
+        this.publish(unsubscribeName, { id }, {
+          singleConsumer: true,
+          ...(target ? { target } : {}),
+        });
+      }
+      onAckFail();
+    }, effectiveAckTimeout);
+
+    ackCallback = (ackEvent: any) => {
+      if (ackEvent.id === id) {
+        if (ackTimer) {
+          clearTimeout(ackTimer);
+          ackTimer = undefined;
+        }
+        if (ackCallback) {
+          this.unsubscribe(ackName, ackCallback);
+          ackCallback = undefined;
+        }
+        if (responseTimeout !== undefined) {
+          responseTimer = setTimeout(() => {
+            cleanup();
+            if (
+              this.portSubscriptions.has(unsubscribeName) ||
+              this.sourceSubscriptions.has(unsubscribeName)
+            ) {
+              this.publish(unsubscribeName, { id }, {
+                singleConsumer: true,
+                ...(target ? { target } : {}),
+              });
+            }
+            handler(
+              null,
+              true,
+              new Error("Timeout waiting for command response"),
+            );
+          }, responseTimeout);
+        }
+      }
+    };
+
+    this.subscribe(ackName, ackCallback);
+
+    if (!this.responseSubscriptions.has(responseName)) {
+      this.responseSubscriptions.set(responseName, new Map());
+      this.subscribe(responseName, callback);
+      this.subscribe(unsubscribeName, unsubscribeCallback);
+    }
+    this.responseSubscriptions.get(responseName)?.set(id, handler);
+
+    return cleanup;
+  }
+
+  public sendStreamWithFailover(
+    name: string,
+    data: any,
+    onResponse: (data: any, done: boolean, error?: any) => void,
+    options?: { timeout?: number; ackTimeout?: number },
+  ): () => void {
+    const candidates = Array.from(this.sourceSubscriptions.get(name) ?? []);
+    const reqTimeout = options?.timeout;
+    const reqAckTimeout = options?.ackTimeout ?? this.ackTimeout;
+
+    let isCancelled = false;
+    let currentId: string | undefined;
+    let currentTarget: string | undefined;
+    let currentCleanup: (() => void) | undefined;
+
+    const cancel = () => {
+      if (isCancelled) return;
+      isCancelled = true;
+      if (currentCleanup) {
+        currentCleanup();
+        currentCleanup = undefined;
+      }
+      if (currentId) {
+        const unsubscribeName = this.getUnsubscribeName(name);
+        this.publish(unsubscribeName, { id: currentId }, {
+          singleConsumer: true,
+          ...(currentTarget ? { target: currentTarget } : {}),
+        });
+      }
+    };
+
+    if (candidates.length <= 1) {
+      currentId = crypto.randomUUID();
+      currentTarget = candidates[0];
+
+      currentCleanup = this.addSubscription(
+        name,
+        currentId,
+        (resData, done, error) => {
+          if (isCancelled) return;
+          if (done || error) {
+            isCancelled = true;
+          }
+          onResponse(resData, done, error);
+        },
+        () => {
+          if (isCancelled) return;
+          isCancelled = true;
+          onResponse(null, true, new Error("Timeout waiting for command ack"));
+        },
+        currentTarget,
+        reqTimeout,
+        reqAckTimeout,
+      );
+
+      this.publish(
+        name,
+        { id: currentId, data },
+        {
+          singleConsumer: true,
+          ...(currentTarget ? { target: currentTarget } : {}),
+        },
+      );
+
+      return cancel;
+    }
+
+    const startIndex = (this.roundRobinIndices.get(name) || 0) % candidates.length;
+    this.roundRobinIndices.set(name, startIndex + 1);
+
+    const orderedCandidates = [
+      ...candidates.slice(startIndex),
+      ...candidates.slice(0, startIndex),
+    ];
+
+    let candidateIndex = 0;
+
+    const tryNext = () => {
+      if (isCancelled) return;
+
+      if (candidateIndex >= orderedCandidates.length) {
+        isCancelled = true;
+        onResponse(
+          null,
+          true,
+          new Error(
+            `Timeout waiting for command ack (all ${orderedCandidates.length} candidates failed)`,
+          ),
+        );
+        return;
+      }
+
+      currentTarget = orderedCandidates[candidateIndex++];
+      currentId = crypto.randomUUID();
+
+      currentCleanup = this.addSubscription(
+        name,
+        currentId,
+        (resData, done, error) => {
+          if (isCancelled) return;
+          if (done || error) {
+            isCancelled = true;
+          }
+          onResponse(resData, done, error);
+        },
+        () => {
+          tryNext();
+        },
+        currentTarget,
+        reqTimeout,
+        reqAckTimeout,
+      );
+
+      this.publish(
+        name,
+        { id: currentId, data },
+        {
+          singleConsumer: true,
+          target: currentTarget,
+        },
+      );
+    };
+
+    tryNext();
+
+    return cancel;
+  }
+
+  public sendRequestWithFailover(
+    name: string,
+    data: any,
+    options?: { timeout?: number; ackTimeout?: number },
+  ): Promise<any> {
+    const { promise, resolve, reject } = Promise.withResolvers<any>();
+    let lastData: any = undefined;
+    this.sendStreamWithFailover(
+      name,
+      data,
+      (resData, done, error) => {
+        if (resData !== undefined) lastData = resData;
+        if (error) reject(error);
+        else if (done) resolve(resData !== undefined ? resData : lastData);
+      },
+      {
+        timeout: options?.timeout ?? this.timeout,
+        ackTimeout: options?.ackTimeout ?? this.ackTimeout,
+      },
+    );
+    return promise;
+  }
+
   public registerPeer(port: MessagePortLike, source: string): void {
     let portCounts = this.idPorts.get(source);
     if (!portCounts) {
@@ -201,6 +589,7 @@ export class PortChannel<
     eventName: string,
     source: string,
   ): void {
+    const before = this.sourceSubscriptions.get(eventName)?.size ?? 0;
     let wasEmpty = false;
     {
       let set = this.portSubscriptions.get(eventName);
@@ -235,6 +624,11 @@ export class PortChannel<
       set.add(source);
     }
 
+    const after = this.sourceSubscriptions.get(eventName)?.size ?? 0;
+    if (before === 0 && after > 0) {
+      this.notifyAvailabilityChange(eventName, true);
+    }
+
     this.registerPeer(port, source);
 
     // If this is the first subscriber, flush buffered events (if any)
@@ -262,6 +656,8 @@ export class PortChannel<
     eventName: string,
     source: string,
   ): void {
+    const before = this.sourceSubscriptions.get(eventName)?.size ?? 0;
+
     // 1. Remove source from portEventSources
     const portMap = this.portEventSources.get(eventName);
     if (portMap) {
@@ -295,6 +691,11 @@ export class PortChannel<
           this.roundRobinIndices.delete(eventName);
         }
       }
+    }
+
+    const after = this.sourceSubscriptions.get(eventName)?.size ?? 0;
+    if (before > 0 && after === 0) {
+      this.notifyAvailabilityChange(eventName, false);
     }
 
     // 3. Decrement peer counters
@@ -442,6 +843,13 @@ export class PortChannel<
       }
     }
 
+    const startAck: StartAckEvent = {
+      type: "startAckEvent",
+      source: this.id,
+      listeners: Array.from(this.listeners.keys()),
+    };
+    port.postMessage(this.serializer.serialize(startAck));
+
     port.postMessage(
       this.serializer.serialize({
         name: Array.from(this.listeners.keys()),
@@ -453,7 +861,7 @@ export class PortChannel<
     if (this.options.onStart) {
       this.options.onStart(port, event.source);
     }
-    this.eventBus.emit(new PortEvents.startEvent());
+    this.eventBus.emit(new PortEvents.startEvent(event));
   }
 
   protected startAckEvent(event: StartAckEvent, port: MessagePortLike): void {
@@ -467,7 +875,7 @@ export class PortChannel<
         }
       }
     }
-    this.eventBus.emit(new PortEvents.startAckEvent());
+    this.eventBus.emit(new PortEvents.startAckEvent(event));
   }
 
   protected pingEvent(event: PingEvent, port: MessagePortLike): void {
@@ -637,6 +1045,8 @@ export class PortChannel<
           }
           if (srcSet.size === 0) {
             this.sourceSubscriptions.delete(eventName);
+            this.roundRobinIndices.delete(eventName);
+            this.notifyAvailabilityChange(eventName, false);
           }
         }
       }
@@ -713,6 +1123,8 @@ export class PortChannel<
                 }
                 if (srcSet.size === 0) {
                   this.sourceSubscriptions.delete(eventName);
+                  this.roundRobinIndices.delete(eventName);
+                  this.notifyAvailabilityChange(eventName, false);
                 }
               }
             }
@@ -731,54 +1143,74 @@ export class PortChannel<
   }
 
   public subscribe(
-    name: string,
+    name: string | string[],
     callback: (data: any, context: TContext, dataEvent: DataEvent) => void,
   ): void {
-    if (!this.listeners.has(name)) {
-      this.listeners.set(name, []);
-    }
-    const callbacks = this.listeners.get(name);
-    if (callbacks) {
-      callbacks.push(callback as any);
+    const names = Array.isArray(name) ? name : [name];
+    for (const n of names) {
+      if (!this.listeners.has(n)) {
+        this.listeners.set(n, []);
+      }
+      const callbacks = this.listeners.get(n);
+      if (callbacks) {
+        callbacks.push(callback as any);
+      }
     }
 
+    const msg: SubscribeEvent = {
+      name,
+      type: "subscribeEvent",
+      source: this.id,
+    };
+    const serialized = this.serializer.serialize(msg);
     for (const port of this.ports) {
-      port.postMessage(
-        this.serializer.serialize({
-          name,
-          type: "subscribeEvent",
-          source: this.id,
-        } as SubscribeEvent),
-      );
+      try {
+        port.postMessage(serialized);
+      } catch {
+        // ignore
+      }
     }
   }
 
   public unsubscribe(
-    name: string,
+    name: string | string[],
     callback?: (data: any, context: TContext) => void,
   ): void {
-    if (!this.listeners.has(name)) return;
-    if (callback) {
-      const callbacks = this.listeners.get(name);
-      if (callbacks) {
-        this.listeners.set(
-          name,
-          callbacks.filter((cb) => cb !== callback),
-        );
+    const names = Array.isArray(name) ? name : [name];
+    const removedNames: string[] = [];
+
+    for (const n of names) {
+      if (!this.listeners.has(n)) continue;
+      if (callback) {
+        const callbacks = this.listeners.get(n);
+        if (callbacks) {
+          this.listeners.set(
+            n,
+            callbacks.filter((cb) => cb !== callback),
+          );
+        }
+      } else {
+        this.listeners.delete(n);
       }
-    } else {
-      this.listeners.delete(name);
+      if (!this.listeners.has(n) || this.listeners.get(n)!.length === 0) {
+        this.listeners.delete(n);
+        removedNames.push(n);
+      }
     }
-    if (!this.listeners.has(name) || this.listeners.get(name)!.length === 0) {
-      this.listeners.delete(name);
+
+    if (removedNames.length > 0) {
+      const msg: UnsubscribeEvent = {
+        name: removedNames.length === 1 ? removedNames[0]! : removedNames,
+        type: "unsubscribeEvent",
+        source: this.id,
+      };
+      const serialized = this.serializer.serialize(msg);
       for (const port of this.ports) {
-        port.postMessage(
-          this.serializer.serialize({
-            name,
-            type: "unsubscribeEvent",
-            source: this.id,
-          } as UnsubscribeEvent),
-        );
+        try {
+          port.postMessage(serialized);
+        } catch {
+          // ignore
+        }
       }
     }
   }
