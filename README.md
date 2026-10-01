@@ -25,6 +25,8 @@ npm install @collidor/event
 
 ## Basic Usage
 
+### Using Class Inheritance
+
 ```ts [Event Definition]
 import { Event } from "@collidor/event";
 
@@ -44,6 +46,33 @@ bus.on(UserUpdate, (data) => {
 
 // Publish
 bus.emit(new UserUpdate({ id: "123" }));
+```
+
+### Using `createEvent` (Bundler / Minification Safe)
+
+When bundling for production, JavaScript minifiers often mangle class names (e.g. `class UserUpdate` becomes `class a`). Since the event bus and channels (`PortChannel`, `WindowCustomEventPort`) route and serialize events using their constructor name, `createEvent` provides a type-safe way to define events with a fixed, unminifiable name:
+
+```typescript
+import { createEvent, EventBus } from "@collidor/event";
+
+// Define event with explicit payload type and name: createEvent<PayloadType>("EventName")
+export const UserUpdate = createEvent<{ id: string }>("UserUpdate");
+
+// Void events (no arguments required):
+export const UserLoggedOut = createEvent<void>("UserLoggedOut");
+
+const bus = new EventBus();
+
+bus.on(UserUpdate, (data) => {
+  console.log(`User ${data.id} updated`);
+});
+
+bus.on(UserLoggedOut, () => {
+  console.log("User logged out");
+});
+
+bus.emit(new UserUpdate({ id: "123" }));
+bus.emit(new UserLoggedOut());
 ```
 
 ---
