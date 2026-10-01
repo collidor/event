@@ -1,3 +1,10 @@
+# [4.6.0](https://github.com/collidor/event/compare/v4.5.0...v4.6.0) (2026-10-01)
+
+
+### Features
+
+* **port-channel:** centralize ACK, timeout, failover and bidirectional handshake ([26120c4](https://github.com/collidor/event/commit/26120c4fecf8f0756fc24bd02af8d5eea6487025))
+
 # [4.5.0](https://github.com/collidor/event/compare/v4.4.0...v4.5.0) (2026-09-26)
 
 
