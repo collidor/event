@@ -1,3 +1,10 @@
+# [4.7.0](https://github.com/collidor/event/compare/v4.6.0...v4.7.0) (2026-10-01)
+
+
+### Features
+
+* **event:** add createEvent factory function ([37da3ad](https://github.com/collidor/event/commit/37da3ad115056ed81dcd43e984a42a6a2f3bfbb6))
+
 # [4.6.0](https://github.com/collidor/event/compare/v4.5.0...v4.6.0) (2026-10-01)
 
 
