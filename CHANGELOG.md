@@ -1,3 +1,10 @@
+## [4.7.2](https://github.com/collidor/event/compare/v4.7.1...v4.7.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **port-channel:** release response listeners when overlapping streams finish ([df54d57](https://github.com/collidor/event/commit/df54d579529a065ef9d043ea2d56ea6c6c35c277))
+
 ## [4.7.1](https://github.com/collidor/event/compare/v4.7.0...v4.7.1) (2026-10-08)
 
 
