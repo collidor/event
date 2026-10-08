@@ -111,6 +111,16 @@ export class PortChannel<
     string,
     Map<string, (data: any, done: boolean, error?: any) => void>
   > = new Map();
+  /** Shared _Response / _Unsubscribe listeners, one pair per response name. */
+  protected responseListeners: Map<
+    string,
+    {
+      onResponse: (response: any) => void;
+      onUnsubscribe: (response: any) => void;
+    }
+  > = new Map();
+  /** Cleanup of every in-flight request, by request id. */
+  protected subscriptionCleanups: Map<string, () => void> = new Map();
   public availabilityCallbacks: Set<
     (name: string, isAvailable: boolean) => void
   > = new Set();
@@ -291,8 +301,13 @@ export class PortChannel<
     this.responseSubscriptions.get(responseName)?.delete(id);
     if (this.responseSubscriptions.get(responseName)?.size === 0) {
       this.responseSubscriptions.delete(responseName);
-      this.unsubscribe(responseName, callback);
-      this.unsubscribe(unsubscribeName, unsubscribeCallback);
+      // Unsubscribe the shared listeners that were registered, not the
+      // per-request closures passed in (those were never subscribed when
+      // another request registered first).
+      const shared = this.responseListeners.get(responseName);
+      this.responseListeners.delete(responseName);
+      this.unsubscribe(responseName, shared?.onResponse ?? callback);
+      this.unsubscribe(unsubscribeName, shared?.onUnsubscribe ?? unsubscribeCallback);
     }
   }
 
@@ -326,6 +341,7 @@ export class PortChannel<
         this.unsubscribe(ackName, ackCallback);
         ackCallback = undefined;
       }
+      this.subscriptionCleanups.delete(id);
       this.removeSubscription(
         name,
         id,
@@ -334,22 +350,24 @@ export class PortChannel<
       );
     };
 
+    // Only the first request for a response name registers these on the
+    // channel, so they must act on the request a frame belongs to, never on
+    // the request that happened to register them.
     const callback = (response: any) => {
       const subscribedHandler = this.responseSubscriptions.get(responseName)
         ?.get(response.id);
       if (subscribedHandler) {
         subscribedHandler(response.data, response.done, response.error);
-      }
-      if (response.done || !subscribedHandler) {
-        cleanup();
+        if (response.done) {
+          this.subscriptionCleanups.get(response.id)?.();
+        }
       }
     };
 
     const unsubscribeCallback = (response: any) => {
-      if (response.id === id) {
-        cleanup();
-      }
+      this.subscriptionCleanups.get(response?.id)?.();
     };
+    this.subscriptionCleanups.set(id, cleanup);
 
     const effectiveAckTimeout = ackTimeout ?? this.ackTimeout;
     ackTimer = setTimeout(() => {
@@ -402,6 +420,10 @@ export class PortChannel<
 
     if (!this.responseSubscriptions.has(responseName)) {
       this.responseSubscriptions.set(responseName, new Map());
+      this.responseListeners.set(responseName, {
+        onResponse: callback,
+        onUnsubscribe: unsubscribeCallback,
+      });
       this.subscribe(responseName, callback);
       this.subscribe(unsubscribeName, unsubscribeCallback);
     }

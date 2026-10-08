@@ -511,6 +511,83 @@ function connectPorts(...ports: FakeMessagePort[]) {
 
 class TestEvent extends Event<string> {}
 
+// A client/server pair where "Cmd" streams `data` numbers, one every 5ms.
+function setupStreamingPair() {
+  const server = new PortChannel({ id: "server", bufferTimeout: 50 });
+  const client = new PortChannel({ id: "client", bufferTimeout: 50 });
+  const serverPort = new FakeMessagePort("server");
+  const clientPort = new FakeMessagePort("client");
+  connectPorts(serverPort, clientPort);
+  server.addPort(serverPort);
+  client.addPort(clientPort);
+
+  server.subscribe("Cmd", (req: { id: string; data: number }, _ctx, ev) => {
+    const target = ev.source;
+    server.publish("Cmd_Ack", { id: req.id }, { singleConsumer: true, target });
+    (async () => {
+      for (let i = 0; i < req.data; i++) {
+        await delay(5);
+        server.publish(
+          "Cmd_Response",
+          { id: req.id, data: i, done: false },
+          { singleConsumer: true, target },
+        );
+      }
+      server.publish(
+        "Cmd_Response",
+        { id: req.id, data: null, done: true },
+        { singleConsumer: true, target },
+      );
+    })();
+  });
+
+  const open = (n: number) => {
+    const frames: string[] = [];
+    client.sendStreamWithFailover("Cmd", n, (d, done) => {
+      frames.push(done ? "done" : String(d));
+    });
+    return frames;
+  };
+  return { server, client, open };
+}
+
+Deno.test(
+  "PortChannel - a stream that finishes first does not cut off a longer one",
+  async () => {
+    const { server, client, open } = setupStreamingPair();
+
+    const long = open(6);
+    const short = open(2);
+    await delay(100);
+
+    assertEquals(short, ["0", "1", "done"]);
+    assertEquals(long, ["0", "1", "2", "3", "4", "5", "done"]);
+
+    client[Symbol.dispose]();
+    server[Symbol.dispose]();
+  },
+);
+
+Deno.test(
+  "PortChannel - overlapping streams release all response listeners when done",
+  async () => {
+    const { server, client, open } = setupStreamingPair();
+
+    // Shorter one first, so the stream that finishes last is not the first opened.
+    open(2);
+    open(6);
+    open(4);
+    await delay(100);
+
+    assertEquals(client.responseSubscriptions.size, 0);
+    assertEquals((client as any).listeners.has("Cmd_Response"), false);
+    assertEquals((client as any).listeners.has("Cmd_Unsubscribe"), false);
+
+    client[Symbol.dispose]();
+    server[Symbol.dispose]();
+  },
+);
+
 Deno.test(
   "PortChannel - should send event from one end to the other",
   async () => {
