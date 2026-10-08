@@ -1,3 +1,10 @@
+## [4.7.1](https://github.com/collidor/event/compare/v4.7.0...v4.7.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **port-channel:** don't buffer internal ack/response/unsubscribe events ([b6fe82f](https://github.com/collidor/event/commit/b6fe82f89c2113884074e91361a7aa054f9661ef))
+
 # [4.7.0](https://github.com/collidor/event/compare/v4.6.0...v4.7.0) (2026-10-01)
 
 
