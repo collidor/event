@@ -212,6 +212,12 @@ export class PortChannel<
     return `${name}_Ack`;
   }
 
+  public static isInternalEventName(name: string): boolean {
+    return name.endsWith("_Response") ||
+      name.endsWith("_Ack") ||
+      name.endsWith("_Unsubscribe");
+  }
+
   public getResponseName(name: string): string {
     return PortChannel.getResponseName(name);
   }
@@ -242,12 +248,7 @@ export class PortChannel<
     const available: string[] = [];
     for (const [name, sources] of this.sourceSubscriptions) {
       if (sources.size > 0) {
-        if (
-          filterInternal &&
-          (name.endsWith("_Response") ||
-            name.endsWith("_Ack") ||
-            name.endsWith("_Unsubscribe"))
-        ) {
+        if (filterInternal && PortChannel.isInternalEventName(name)) {
           continue;
         }
         available.push(name);
@@ -264,11 +265,7 @@ export class PortChannel<
     name: string,
     isAvailable: boolean,
   ): void {
-    if (
-      name.endsWith("_Response") ||
-      name.endsWith("_Ack") ||
-      name.endsWith("_Unsubscribe")
-    ) {
+    if (PortChannel.isInternalEventName(name)) {
       return;
     }
     for (const cb of this.availabilityCallbacks) {
@@ -1301,6 +1298,12 @@ export class PortChannel<
         }
       }
     }
+
+    // Protocol frames (ack / response / unsubscribe) are only meaningful to the
+    // request that produced them. Replaying one to a later subscriber would
+    // deliver a stale frame, and an unconsumed one would hold a timer for
+    // `bufferTimeout`, so they are dropped when nobody is listening.
+    if (PortChannel.isInternalEventName(name)) return;
 
     this.bufferEvent(name, dataEvent);
   }

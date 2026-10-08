@@ -466,6 +466,36 @@ Deno.test(
   },
 );
 
+Deno.test(
+  "PortChannel Buffer - internal ack/response/unsubscribe events are never buffered",
+  () => {
+    const channel = new PortChannel({ bufferTimeout: 2000 });
+
+    // Nobody listens: a directed protocol frame has no meaning later on, so it
+    // must be dropped instead of being replayed to a future subscriber.
+    channel.publish(channel.getAckName("Cmd"), { id: "1" }, {
+      singleConsumer: true,
+      target: "peer",
+    });
+    channel.publish(channel.getResponseName("Cmd"), { id: "1", done: true }, {
+      singleConsumer: true,
+      target: "peer",
+    });
+    channel.publish(channel.getUnsubscribeName("Cmd"), { id: "1" }, {
+      singleConsumer: true,
+      target: "peer",
+    });
+
+    assertEquals((channel as any).bufferedEvents.size, 0);
+
+    // Ordinary events are still buffered.
+    channel.publish("Cmd", { id: "1" });
+    assertEquals((channel as any).bufferedEvents.has("Cmd"), true);
+
+    channel[Symbol.dispose]();
+  },
+);
+
 function connectPorts(...ports: FakeMessagePort[]) {
   for (const port of ports) {
     port.postMessage = function (this: FakeMessagePort, message: any) {
